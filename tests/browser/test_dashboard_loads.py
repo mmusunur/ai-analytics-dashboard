@@ -5,23 +5,14 @@ Tests the React frontend running at http://localhost:5173
 
 import pytest
 from playwright.sync_api import Page, expect
-
+from playwright_helpers import goto_with_retry
 
 BASE_URL = "http://localhost:5173"
-
-
-@pytest.fixture(scope="session")
-def browser_context_args(browser_context_args):
-    return {
-        **browser_context_args,
-        "viewport": {"width": 1440, "height": 900}
-    }
-
 
 def test_dashboard_loads(page: Page):
     """Dashboard page should load and show KPI cards."""
     page.goto(BASE_URL)
-    expect(page).to_have_title("AI Analytics Dashboard")
+    expect(page).to_have_title("AgenticOps AI")
     # Wait for page content
     page.wait_for_selector(".kpi-card", timeout=10000)
     kpi_cards = page.locator(".kpi-card")
@@ -90,9 +81,12 @@ def test_bar_chart_rendered(page: Page):
 
 def test_scatter_plot_rendered(page: Page):
     """Scatter plot must render SVG dots — not blank canvas."""
-    page.goto(BASE_URL)
-    page.wait_for_selector(".chart-card svg", timeout=10000)
-    # Both charts (bar + scatter) must have SVGs
+    goto_with_retry(page, BASE_URL)
+    page.wait_for_selector("#global-db-selector", timeout=10000)
+    page.select_option("#global-db-selector", "pg_dev")
+    page.click("#submit-db-btn")
+    page.wait_for_selector(".chart-card", timeout=15000)
+    page.wait_for_selector(".chart-card svg", timeout=20000)
     chart_svgs = page.locator(".chart-card svg")
     assert chart_svgs.count() >= 2, "Scatter plot SVG not found — second chart may be blank"
 
@@ -108,12 +102,19 @@ def test_warehouse_table_populated(page: Page):
 
 
 def test_table_row_count_badge(page: Page):
-    """Row count badge must show 'Loaded X / Y' with X >= 0."""
+    """Row count badge shows loaded/total when warehouse table has data (via Copilot date-agnostic mode)."""
     page.goto(BASE_URL)
-    page.wait_for_selector("table", timeout=15000)
-    # Look for the row count text in the page
-    row_badge = page.locator("text=Data Table Rows")
-    expect(row_badge).to_be_visible()
+    page.wait_for_selector("#global-db-selector", timeout=10000)
+    page.select_option("#global-db-selector", "pg_dev")
+    page.click("#submit-db-btn")
+    # Copilot mode queries full dataset (no date) — avoids empty-state when today's date has no rows
+    page.wait_for_selector("button:has-text('High Scratch Quantity')", timeout=15000)
+    page.locator("button:has-text('High Scratch Quantity')").click()
+    page.wait_for_selector("text=AI Copilot Finding", timeout=15000)
+    page.wait_for_timeout(1500)
+    row_badge = page.get_by_text("Data Table Rows", exact=False)
+    expect(row_badge).to_be_visible(timeout=15000)
+    expect(page.get_by_text("Loaded", exact=False)).to_be_visible()
 
 
 def test_target_db_selection_prod_vs_dev(page: Page):

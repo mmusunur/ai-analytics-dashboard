@@ -9,8 +9,9 @@ This task specification governs the **Real-Time Agent Monitoring, Health Status 
 
 ### 1. Watchdog Process Supervisor (`scripts/agent_watchdog.py`)
 - **Script:** [`scripts/agent_watchdog.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/scripts/agent_watchdog.py)
-- **Role:** Continuously inspects active OS processes (`psutil`), port availability (`8000`, `5173`), and agent heartbeat states (`agent_state.json`).
-- **Self-Healing Directive:** If any background agent (`Sprint Watcher`, `Builder`, `Tester`, `Memory`, `Git Agent`) or server crashes or hangs, `agent_watchdog.py` automatically restarts the process immediately without user intervention.
+- **Helper:** [`scripts/server_health.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/scripts/server_health.py) — `ensure_servers_running()`, port checks
+- **Role:** Continuously inspects port availability (`8000`, `5173`) and sprint watcher process (`run_sprint_watcher.py` or `sprint_watcher_agent.py`).
+- **Self-Healing Directive:** If backend, frontend, or sprint watcher crashes, `agent_watchdog.py` automatically restarts the process immediately without user intervention.
 
 ### 2. Backend Agent Status API (`/api/agents/status`)
 - **Router:** [`backend/main.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/backend/main.py)

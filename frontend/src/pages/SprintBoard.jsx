@@ -6,15 +6,16 @@ import {
   AlertTriangle, CalendarClock, RotateCcw
 } from 'lucide-react'
 import axios from 'axios'
+import { useAgentWorking } from '../context/AgentWorkingContext'
+import { useLivePoll } from '../hooks/useLivePoll'
+import MonitorRefreshBar from '../components/MonitorRefreshBar'
+import SprintMonitorPanel from '../components/SprintMonitorPanel'
 
 const API = import.meta.env.VITE_API_URL || ''
 
 export default function SprintBoard() {
-  const [sprintData, setSprintData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const { agentWorking, agentWorkingTask } = useAgentWorking()
   const [searchTerm, setSearchTerm] = useState('')
-  const [agentStatus, setAgentStatus] = useState(null)
 
   // Workspace & Project state
   const [workspaces, setWorkspaces] = useState([])
@@ -68,41 +69,45 @@ export default function SprintBoard() {
     }
   }
 
-  const fetchAgentStatus = async () => {
-    try {
-      const res = await axios.get(`${API}/api/sprints/agent-status`)
-      if (res.data?.status === 'success') {
-        setAgentStatus(res.data)
-      }
-    } catch (_) {
-      // agent status is non-critical
-    }
-  }
+  const fetchSprintTasksApi = useCallback(async () => {
+    const params = {}
+    if (selectedWorkspace) params.workspace_slug = selectedWorkspace
+    if (selectedProject) params.project_id = selectedProject
+    const res = await axios.get(`${API}/api/sprints/tasks`, { params, timeout: 15000 })
+    return res.data
+  }, [selectedWorkspace, selectedProject])
 
-  const fetchSprintTasks = async (isSilent = false) => {
-    try {
-      if (!isSilent) setLoading(true)
-      const params = {}
-      if (selectedWorkspace) params.workspace_slug = selectedWorkspace
-      if (selectedProject) params.project_id = selectedProject
-
-      const res = await axios.get(`${API}/api/sprints/tasks`, { params })
-      setSprintData(res.data)
-      setError(null)
-    } catch (err) {
-      console.error('[SprintBoard] Failed to fetch live sprint tasks:', err)
-      setError('Could not connect to live Sprint Watcher agent. Displaying cached sprint state.')
-    } finally {
-      if (!isSilent) setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchWorkspaces()
-    fetchAgentStatus()
-    const agentInterval = setInterval(fetchAgentStatus, 15000)
-    return () => clearInterval(agentInterval)
+  const fetchFleetApi = useCallback(async () => {
+    const res = await axios.get(`${API}/api/agents/status`, { timeout: 8000 })
+    return res.data
   }, [])
+
+  const {
+    data: sprintData,
+    lastUpdated: tasksLastUpdated,
+    isRefreshing: tasksRefreshing,
+    isInitialLoad: tasksInitialLoad,
+    error: tasksError,
+    refresh: refreshTasks,
+    secondsUntilRefresh: tasksCountdown,
+    paused: tasksPaused,
+  } = useLivePoll(fetchSprintTasksApi, {
+    intervalMs: 12000,
+    pause: agentWorking,
+    enabled: true,
+    deps: [selectedWorkspace, selectedProject],
+  })
+
+  const { data: fleetData } = useLivePoll(fetchFleetApi, {
+    intervalMs: 4000,
+    pause: agentWorking,
+    enabled: true,
+  })
+
+  const pipeline = fleetData?.pipeline || {}
+  const watcherActive = (fleetData?.agents?.sprint_watcher?.status || 'running') === 'running'
+  const loading = tasksInitialLoad && !sprintData
+  const error = tasksError
 
   // Detect sprint expiry whenever sprint data changes
   useEffect(() => {
@@ -143,7 +148,7 @@ export default function SprintBoard() {
       })
       if (res.data?.status === 'success') {
         setActionMsg({ type: 'success', text: `✅ ${res.data.message}` })
-        setTimeout(() => fetchSprintTasks(true), 1500)  // Refresh after 1.5s
+        setTimeout(() => refreshTasks(true), 1500)
       } else {
         setActionMsg({ type: 'error', text: res.data?.message || 'Sprint extension failed.' })
       }
@@ -180,15 +185,13 @@ export default function SprintBoard() {
       type: restored > 0 ? 'success' : 'error',
       text: `↩️ Restored ${restored}/${cancelledTasks.length} tasks to To Do${failed > 0 ? ` (${failed} failed)` : ''}.`
     })
-    setTimeout(() => fetchSprintTasks(true), 1500)
+    setTimeout(() => refreshTasks(true), 1500)
     setRestoringTasks(false)
   }
 
   useEffect(() => {
-    fetchSprintTasks(false)
-    const interval = setInterval(() => fetchSprintTasks(true), 45000)
-    return () => clearInterval(interval)
-  }, [selectedWorkspace, selectedProject])
+    fetchWorkspaces()
+  }, [])
 
   const priorityColors = {
     urgent: { bg: 'rgba(239, 68, 68, 0.15)', text: '#ef4444', border: 'rgba(239, 68, 68, 0.4)' },
@@ -247,6 +250,35 @@ export default function SprintBoard() {
       transition={{ duration: 0.4 }}
       style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto' }}
     >
+      <div style={{ marginBottom: '8px' }}>
+        <h1 style={{ fontSize: '26px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+          Sprint Monitor & Board
+        </h1>
+        <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '6px' }}>
+          Live Plane tasks with auto-refresh — watcher picks up To Do / Unstarted tasks automatically.
+        </p>
+      </div>
+
+      <MonitorRefreshBar
+        title="Sprint Board Sync"
+        lastUpdated={tasksLastUpdated}
+        isRefreshing={tasksRefreshing || loading}
+        paused={tasksPaused}
+        secondsUntilRefresh={tasksCountdown}
+        error={error}
+        onRefresh={refreshTasks}
+        intervalLabel="12s"
+      />
+
+      <SprintMonitorPanel
+        pipeline={pipeline}
+        agentWorking={agentWorking}
+        agentWorkingTask={agentWorkingTask}
+        inProgressCount={inProgressTasks.length}
+        todoCount={todoTasks.length}
+        watcherActive={watcherActive}
+      />
+
       <div style={{
         background: 'linear-gradient(135deg, rgba(124,58,237,0.12) 0%, rgba(6,182,212,0.12) 100%)',
         border: '1px solid rgba(124,58,237,0.3)', borderRadius: '16px',
@@ -266,9 +298,9 @@ export default function SprintBoard() {
                 🤖 Synchronized via Sprint Watcher Agent
               </span>
             </div>
-            <h1 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '8px', marginBottom: '4px' }}>
+            <h2 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '8px', marginBottom: '4px' }}>
               {formattedTitle}
-            </h1>
+            </h2>
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
               Real-time task monitoring &amp; execution across Plane workspace projects (Backlog, Todo, In Progress, Completed).
             </p>
@@ -330,15 +362,16 @@ export default function SprintBoard() {
             </div>
 
             <button
-              onClick={fetchSprintTasks}
-              disabled={loading}
+              type="button"
+              onClick={() => refreshTasks(false)}
+              disabled={tasksRefreshing}
               style={{
                 background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
                 color: 'var(--text-primary)', padding: '8px 16px', borderRadius: '8px',
                 fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
               }}
             >
-              <RefreshCw size={14} className={loading ? 'spin' : ''} />
+              <RefreshCw size={14} className={tasksRefreshing ? 'spin' : ''} />
               Refresh Board
             </button>
           </div>
@@ -470,67 +503,7 @@ export default function SprintBoard() {
         )}
       </AnimatePresence>
 
-      {/* ── Live Agent Status Indicator ── */}
-      {agentStatus && (
-
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
-          background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-          borderRadius: '10px', padding: '10px 16px', marginBottom: '16px',
-          fontSize: '12px'
-        }}>
-          <Activity size={14} color="#A78BFA" />
-          <span style={{ color: '#94A3B8', fontWeight: 700, letterSpacing: '0.5px' }}>AGENT PIPELINE:</span>
-
-          {/* Sprint Watcher */}
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{
-              width: '7px', height: '7px', borderRadius: '50%',
-              background: agentStatus.sprint_watcher?.status === 'running' ? '#f59e0b' : '#34d399',
-              animation: agentStatus.sprint_watcher?.status === 'running' ? 'pulse 1s infinite' : 'none',
-              flexShrink: 0
-            }} />
-            <span style={{ color: agentStatus.sprint_watcher?.status === 'running' ? '#f59e0b' : '#64748B' }}>
-              Watcher: {agentStatus.sprint_watcher?.status === 'running'
-                ? `ACTIVE — ${agentStatus.sprint_watcher?.current_task?.slice(0, 50) || 'Processing...'}`
-                : 'Monitoring'}
-            </span>
-          </span>
-
-          <span style={{ color: 'var(--border-color)' }}>|</span>
-
-          {/* Builder */}
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{
-              width: '7px', height: '7px', borderRadius: '50%',
-              background: agentStatus.builder?.status === 'running' ? '#f59e0b' : '#34d399',
-              animation: agentStatus.builder?.status === 'running' ? 'pulse 1s infinite' : 'none',
-              flexShrink: 0
-            }} />
-            <span style={{ color: agentStatus.builder?.status === 'running' ? '#f59e0b' : '#64748B' }}>
-              Builder: {agentStatus.builder?.status === 'running'
-                ? agentStatus.builder?.current_task?.slice(0, 50) || 'Running...'
-                : 'Idle'}
-            </span>
-          </span>
-
-          <span style={{ color: 'var(--border-color)' }}>|</span>
-
-          {/* Tester */}
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{
-              width: '7px', height: '7px', borderRadius: '50%',
-              background: agentStatus.tester?.status === 'running' ? '#f59e0b' : '#34d399',
-              flexShrink: 0
-            }} />
-            <span style={{ color: '#64748B' }}>
-              Tester: {agentStatus.tester?.status === 'running' ? 'Running Tests' : 'Idle'}
-            </span>
-          </span>
-        </div>
-      )}
-
-      {/* ── Search & Priority Filter Controls ── */}
+      {/* Search & Priority Filter Controls */}
 
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',

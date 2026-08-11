@@ -157,8 +157,11 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
             >
               <option value="">All Warehouses</option>
               {(() => {
-                const whsList = summary?.distinct_warehouses || [];
-                const optionsSet = new Set(whsList.map(w => String(w).trim()));
+                const fromTotals = (summary?.warehouse_totals || [])
+                  .map(w => String(w.whs_num ?? w.warehouse ?? '').trim())
+                  .filter(Boolean);
+                const fromItems = items.map(it => String(it.whs_num ?? '').trim()).filter(Boolean);
+                const optionsSet = new Set([...fromTotals, ...fromItems]);
                 if (filterWhs) optionsSet.add(String(filterWhs).trim());
                 const sortedWhs = Array.from(optionsSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
                 return sortedWhs.map(w => (
@@ -249,25 +252,25 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
           <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
             <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>Total Cases Built (cases_bld_stg)</div>
             <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-primary)', marginTop: '4px' }}>
-              {summary.total_cases_built.toLocaleString()}
+              {(summary.total_cases_built ?? 0).toLocaleString()}
             </div>
           </div>
           <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
             <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>Original Order Qty (orgnl_ordr_qty)</div>
             <div style={{ fontSize: '24px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>
-              {summary.total_original_order_qty.toLocaleString()}
+              {(summary.total_original_order_qty ?? 0).toLocaleString()}
             </div>
           </div>
           <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
             <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>Invoices Processed</div>
             <div style={{ fontSize: '24px', fontWeight: 700, color: '#c084fc', marginTop: '4px' }}>
-              {summary.total_invoices_processed}
+              {summary.total_invoices_processed ?? 0}
             </div>
           </div>
           <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
             <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>Procurement Transfer Rate</div>
             <div style={{ fontSize: '24px', fontWeight: 700, color: '#f59e0b', marginTop: '4px' }}>
-              {summary.procurement_fulfillment_rate}
+              {summary.procurement_fulfillment_rate ?? '0%'}
             </div>
           </div>
         </div>

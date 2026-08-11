@@ -24,8 +24,7 @@ import re
 import json
 import pytest
 from playwright.sync_api import Page, expect
-
-BASE_URL = "http://localhost:5173"
+from playwright_helpers import goto_with_retry, BASE_URL
 API_URL = "http://127.0.0.1:8000"
 
 
@@ -300,7 +299,7 @@ def test_tc11_anomaly_panel_renders(page: Page):
 # ─────────────────────────────────────────────────────────────
 def test_tc12_database_switch_triggers_reload(page: Page):
     """TC-12: Switching database triggers API calls with new target_db value."""
-    page.goto(BASE_URL)
+    goto_with_retry(page, BASE_URL)
     page.wait_for_selector("#global-db-selector", timeout=12000)
     api_calls = []
     page.on("request", lambda req: api_calls.append(req.url) if "/api/" in req.url else None)

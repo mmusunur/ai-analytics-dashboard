@@ -7,8 +7,7 @@ import time
 import pytest
 from playwright.sync_api import Page, expect
 from pathlib import Path
-
-BASE_URL = "http://localhost:5173"
+from playwright_helpers import goto_with_retry, BASE_URL
 ARTIFACTS_DIR = Path(r"C:\Users\manik\.gemini\antigravity-ide\brain\136ed3c3-e5d6-40ab-8752-aedbf5a121ce")
 
 
@@ -22,7 +21,7 @@ def test_sprint_board_browser_navigation_and_project_dropdown(page: Page):
     5. Interacts with project dropdown and verifies task cards display project badges.
     """
     # 1. Open Sprint Board page
-    page.goto(f"{BASE_URL}/sprints")
+    goto_with_retry(page, f"{BASE_URL}/sprints")
     page.wait_for_selector("select#sprint-board-workspace-select", timeout=15000)
 
     # 2. Refresh browser to test refresh scenario explicitly
@@ -68,7 +67,7 @@ def test_sprint_board_dropdown_high_contrast_styling(page: Page):
     Verifies that Workspace and Project dropdown controls have dark glassmorphism background colors
     and high-contrast option styling for crystal-clear readability.
     """
-    page.goto(f"{BASE_URL}/sprints")
+    goto_with_retry(page, f"{BASE_URL}/sprints")
     page.wait_for_selector("select#sprint-board-workspace-select", timeout=15000)
     page.wait_for_selector("select#sprint-board-project-select", timeout=15000)
 

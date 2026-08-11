@@ -234,6 +234,19 @@ def classify_task_intent_with_llm(task_title: str, description: str) -> Dict:
             "tests/generate_test_excel.py"
         ]
 
+    # --- Category 14: Hide / Remove UI Content --------------------------------
+    if any(p in text_clean for p in [
+        "remove unwanted", "hide items", "hide unwanted", "remove the unwanted",
+        "hide from ui", "hide component", "remove from dashboard", "hide sprint board",
+        "hide agent monitor", "copilot search fixes", "warehouse level statistics",
+    ]):
+        intents.append("HIDE_UI_CONTENT")
+        actions.append("HIDE_SPRINT_BOARD_AGENT_MONITOR_COPILOT_FIXES_WAREHOUSE_STATS")
+        target_files += [
+            "frontend/src/pages/Dashboard.jsx",
+            "frontend/src/components/Sidebar.jsx",
+        ]
+
     # --- Fallback Semantic Extraction -----------------------------------------
     if not intents:
         clean_words = [

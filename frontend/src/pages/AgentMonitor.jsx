@@ -1,219 +1,225 @@
-import React, { useState, useEffect } from 'react'
+import { useCallback } from 'react'
 import { motion } from 'framer-motion'
 import {
-  Cpu, Activity, CheckCircle2, Clock, Terminal, ShieldCheck,
-  RefreshCw, Layers, Database, GitBranch, PlayCircle, Zap
+  Cpu, Activity, Terminal, ShieldCheck, RefreshCw, Database, GitBranch, Zap, ExternalLink
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import axios from 'axios'
+import { useLivePoll } from '../hooks/useLivePoll'
+import { useAgentWorking } from '../context/AgentWorkingContext'
+import MonitorRefreshBar from '../components/MonitorRefreshBar'
+import AgentPipelineTracker from '../components/AgentPipelineTracker'
 
-const API_BASE = 'http://localhost:8000'
+const API = import.meta.env.VITE_API_URL || ''
+
+const AGENT_DEFS = [
+  { name: 'Sprint Watcher', key: 'sprint_watcher', role: 'Plane task pickup & pipeline orchestration', icon: Activity, color: '#06b6d4' },
+  { name: 'Builder Agent', key: 'builder', role: 'Autonomous code implementation', icon: Cpu, color: '#7c3aed' },
+  { name: 'Tester Agent', key: 'tester', role: 'Unit + browser + sprint dynamic tests', icon: ShieldCheck, color: '#10b981' },
+  { name: 'Git Agent', key: 'git_agent', role: 'Commit & push after task completion', icon: GitBranch, color: '#3b82f6' },
+  { name: 'Memory Manager', key: 'memory', role: 'Persistent state & conversation logs', icon: Database, color: '#f59e0b' },
+  { name: 'Orchestrator', key: 'orchestrator', role: 'Fleet health & watchdog coordination', icon: Terminal, color: '#f43f5e' },
+]
+
+function formatUpdated(iso) {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  } catch {
+    return '—'
+  }
+}
+
+function agentStatusLabel(key, info, pipeline) {
+  const task = (info?.current_task || '').toLowerCase()
+  const isPipelineActive = pipeline?.active_agent === key
+  if (isPipelineActive) return { label: 'ACTIVE NOW', tone: 'active' }
+  if (info?.status === 'running' || task.includes('active') || task.includes('building') || task.includes('test')) {
+    return { label: 'RUNNING', tone: 'running' }
+  }
+  if (info?.status === 'idle') return { label: 'IDLE', tone: 'idle' }
+  return { label: (info?.status || 'unknown').toUpperCase(), tone: 'idle' }
+}
+
+const toneStyles = {
+  active: { bg: 'rgba(124,58,237,0.25)', color: '#c4b5fd', border: 'rgba(124,58,237,0.55)' },
+  running: { bg: 'rgba(16,185,129,0.15)', color: '#34d399', border: 'rgba(16,185,129,0.4)' },
+  idle: { bg: 'rgba(245,158,11,0.12)', color: '#fbbf24', border: 'rgba(245,158,11,0.35)' },
+}
 
 export default function AgentMonitor() {
-  const [agentData, setAgentData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const { agentWorking, agentWorkingTask, agentWorkingSince } = useAgentWorking()
 
-  const fetchAgentStatus = async () => {
-    try {
-      setLoading(true)
-      const res = await fetch(`${API_BASE}/api/agents/status`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setAgentData(data)
-      setError(null)
-    } catch (err) {
-      console.error('Failed to fetch agent status:', err)
-      setError('Could not fetch dynamic agent status. Displaying default agent monitors.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchAgentStatus()
-    const interval = setInterval(fetchAgentStatus, 5000)
-    return () => clearInterval(interval)
+  const fetchFleet = useCallback(async () => {
+    const res = await axios.get(`${API}/api/agents/status`, { timeout: 8000 })
+    return res.data
   }, [])
 
-  const defaultAgents = [
-    {
-      name: 'Sprint Watcher Agent',
-      key: 'sprint_watcher',
-      role: 'Continuous 60s Plane Polling Loop & Task Intake',
-      icon: <Activity size={20} className="text-cyan-400" />,
-      color: '#06b6d4'
-    },
-    {
-      name: 'Builder Agent',
-      key: 'builder',
-      role: 'Autonomous Code Implementation Engine',
-      icon: <Cpu size={20} className="text-purple-400" />,
-      color: '#7c3aed'
-    },
-    {
-      name: 'Tester Agent',
-      key: 'tester',
-      role: 'Pytest & Playwright E2E Verification Engine',
-      icon: <ShieldCheck size={20} className="text-emerald-400" />,
-      color: '#10b981'
-    },
-    {
-      name: 'Memory Manager Agent',
-      key: 'memory',
-      role: 'Persistent Context, State & Log Storage Engine',
-      icon: <Database size={20} className="text-amber-400" />,
-      color: '#f59e0b'
-    },
-    {
-      name: 'Git Automation Agent',
-      key: 'git_agent',
-      role: 'Continuous Daily EOD Commit & Push Engine',
-      icon: <GitBranch size={20} className="text-blue-400" />,
-      color: '#3b82f6'
-    },
-    {
-      name: 'Orchestrator Watchdog',
-      key: 'orchestrator',
-      role: 'System Process Table & Agent Fleet Health Loop',
-      icon: <Terminal size={20} className="text-rose-400" />,
-      color: '#f43f5e'
-    }
-  ]
+  const {
+    data: fleet,
+    lastUpdated,
+    isRefreshing,
+    isInitialLoad,
+    error,
+    refresh,
+    secondsUntilRefresh,
+    paused,
+  } = useLivePoll(fetchFleet, {
+    intervalMs: 4000,
+    pause: agentWorking,
+    enabled: true,
+  })
 
-  const liveAgents = agentData?.agents || {}
+  const agents = fleet?.agents || {}
+  const pipeline = fleet?.pipeline || {}
+  const runningCount = Object.values(agents).filter((a) => (a.status || '').toLowerCase() === 'running').length
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
+      transition={{ duration: 0.35 }}
       style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}
     >
-      {/* ── Header Banner ── */}
-      <div style={{
-        background: 'linear-gradient(135deg, rgba(6,182,212,0.15) 0%, rgba(124,58,237,0.15) 100%)',
-        border: '1px solid rgba(6,182,212,0.3)',
-        borderRadius: '16px',
-        padding: '24px',
-        marginBottom: '24px',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{
-                background: 'linear-gradient(135deg, #06B6D4, #7C3AED)',
-                color: '#fff', fontSize: '11px', fontWeight: 800,
-                padding: '4px 10px', borderRadius: '20px', textTransform: 'uppercase', letterSpacing: '0.5px'
-              }}>
-                Autonomous Fleet Health
-              </span>
-              <span style={{ fontSize: '12px', color: '#34d399', fontWeight: 700 }}>
-                ● 6/6 Agents Active & Operational
-              </span>
-            </div>
-            <h1 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '8px', marginBottom: '4px' }}>
-              🤖 Real-Time Agent Monitor & Process System
-            </h1>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-              Live process tracking, current task assignments, and health telemetry for all AI sub-agents
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button
-              onClick={fetchAgentStatus}
-              disabled={loading}
-              style={{
-                background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
-                color: 'var(--text-primary)', padding: '8px 16px', borderRadius: '8px',
-                fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
-              }}
-            >
-              <RefreshCw size={14} className={loading ? 'spin' : ''} />
-              Poll Telemetry
-            </button>
-          </div>
-        </div>
+      <div style={{ marginBottom: '8px' }}>
+        <h1 style={{ fontSize: '26px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+          Agent Monitor
+        </h1>
+        <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '6px' }}>
+          Live fleet telemetry — which agent is working, current sprint task, and pipeline phase.
+        </p>
       </div>
 
-      {/* ── Agents Grid: 3 Side by Side in First Row, 3 in Second Row ── */}
+      <MonitorRefreshBar
+        title="Agent Fleet Telemetry"
+        lastUpdated={lastUpdated}
+        isRefreshing={isRefreshing || isInitialLoad}
+        paused={paused}
+        secondsUntilRefresh={secondsUntilRefresh}
+        error={error}
+        onRefresh={refresh}
+        intervalLabel="4s"
+      />
+
+      {agentWorking && (
+        <div style={{
+          marginBottom: '16px', padding: '12px 16px', borderRadius: '10px',
+          background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.4)',
+          fontSize: '13px', color: '#c4b5fd',
+        }}>
+          🔒 <strong>Agent modifying code</strong> — auto-refresh paused to avoid UI disruption.
+          {agentWorkingTask && <> Task: <em>{agentWorkingTask}</em></>}
+          {agentWorkingSince && <> · since {formatUpdated(agentWorkingSince)}</>}
+        </div>
+      )}
+
+      <AgentPipelineTracker
+        pipeline={pipeline}
+        agentWorking={agentWorking}
+        agentWorkingTask={agentWorkingTask}
+      />
+
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: '16px', flexWrap: 'wrap', gap: '12px',
+      }}>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <StatPill label="Agents running" value={`${runningCount}/6`} color="#34d399" />
+          <StatPill label="Pipeline phase" value={pipeline.phase || 'idle'} color="#a78bfa" />
+          <StatPill label="Backend sync" value={fleet?.status === 'success' ? 'Connected' : 'Live'} color="#60a5fa" />
+        </div>
+        <Link to="/sprints" style={{
+          display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px',
+          color: '#60a5fa', fontWeight: 600, textDecoration: 'none',
+        }}>
+          Open Sprint Monitor <ExternalLink size={14} />
+        </Link>
+      </div>
+
       <div
         id="agents-grid-container"
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '20px',
-          marginBottom: '24px'
+          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+          gap: '16px',
         }}
       >
-        {defaultAgents.map((ag) => {
-          const liveInfo = liveAgents[ag.key] || {}
-          const isRunning = (liveInfo.status || 'running').toLowerCase() === 'running'
-          const currentTask = liveInfo.current_task || liveInfo.last_task || `${ag.name} Active & Monitoring`
+        {AGENT_DEFS.map((ag) => {
+          const info = agents[ag.key] || {}
+          const Icon = ag.icon
+          const { label, tone } = agentStatusLabel(ag.key, info, pipeline)
+          const style = toneStyles[tone]
 
           return (
-            <motion.div
+            <div
               key={ag.key}
-              whileHover={{ y: -2 }}
               style={{
                 background: 'var(--bg-card)',
-                border: `1px solid ${ag.color}40`,
+                border: `1px solid ${ag.color}35`,
                 borderRadius: '12px',
-                padding: '20px',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                gap: '16px'
+                padding: '18px',
+                boxShadow: tone === 'active' ? `0 0 24px ${ag.color}25` : '0 4px 12px rgba(0,0,0,0.12)',
               }}
             >
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{
-                      padding: '8px', borderRadius: '8px', background: `${ag.color}20`, border: `1px solid ${ag.color}40`
-                    }}>
-                      {ag.icon}
-                    </div>
-                    <div>
-                      <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>{ag.name}</h3>
-                      <p style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{ag.role}</p>
-                    </div>
-                  </div>
-
-                  <span style={{
-                    background: isRunning ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
-                    color: isRunning ? '#34d399' : '#f59e0b',
-                    border: `1px solid ${isRunning ? 'rgba(16,185,129,0.4)' : 'rgba(245,158,11,0.4)'}`,
-                    fontSize: '10px', fontWeight: 800, padding: '3px 8px', borderRadius: '12px', textTransform: 'uppercase'
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <div style={{
+                    padding: '10px', borderRadius: '10px',
+                    background: `${ag.color}18`, border: `1px solid ${ag.color}40`,
                   }}>
-                    ● {isRunning ? 'RUNNING' : 'IDLE'}
-                  </span>
+                    <Icon size={20} color={ag.color} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700 }}>{ag.name}</h3>
+                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>{ag.role}</p>
+                  </div>
                 </div>
-
-                <div style={{
-                  background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
-                  borderRadius: '8px', padding: '12px', marginTop: '12px'
+                <span style={{
+                  fontSize: '10px', fontWeight: 800, padding: '4px 10px', borderRadius: '12px',
+                  background: style.bg, color: style.color, border: `1px solid ${style.border}`,
                 }}>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                    Current Activity / Process
-                  </div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word' }}>
-                    {currentTask}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '10px', fontSize: '11px', color: 'var(--text-secondary)' }}>
-                <span>Updated: {liveInfo.updated_at ? new Date(liveInfo.updated_at).toLocaleTimeString() : 'Just now'}</span>
-                <span style={{ color: ag.color, fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Zap size={12} /> Autonomous Watcher Active
+                  {label}
                 </span>
               </div>
-            </motion.div>
+
+              <div style={{
+                background: 'var(--bg-secondary)', borderRadius: '8px', padding: '12px',
+                border: '1px solid var(--border-color)', minHeight: '52px',
+              }}>
+                <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase' }}>
+                  Current activity
+                </div>
+                <div style={{ fontSize: '13px', fontWeight: 600, lineHeight: 1.4, wordBreak: 'break-word' }}>
+                  {info.current_task || 'Idle — awaiting next sprint task'}
+                </div>
+              </div>
+
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', marginTop: '12px',
+                fontSize: '11px', color: 'var(--text-secondary)',
+              }}>
+                <span>Updated {formatUpdated(info.last_updated)}</span>
+                {info.pid && <span style={{ fontFamily: 'monospace' }}>PID {info.pid}</span>}
+                <span style={{ color: ag.color, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Zap size={11} /> Live
+                </span>
+              </div>
+            </div>
           )
         })}
       </div>
     </motion.div>
+  )
+}
+
+function StatPill({ label, value, color }) {
+  return (
+    <div style={{
+      padding: '8px 14px', borderRadius: '8px', background: 'var(--bg-card)',
+      border: '1px solid var(--border-color)', fontSize: '12px',
+    }}>
+      <span style={{ color: 'var(--text-secondary)' }}>{label}: </span>
+      <strong style={{ color }}>{value}</strong>
+    </div>
   )
 }

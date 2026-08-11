@@ -4,7 +4,10 @@ import psutil
 from datetime import datetime
 from pathlib import Path
 from rich.console import Console
-from agents.memory_helpers import cleanup_old_memory, load_conversation
+try:
+    from memory_helpers import cleanup_old_memory, load_conversation
+except ImportError:
+    from agents.memory_helpers import cleanup_old_memory, load_conversation
 
 console = Console(force_terminal=True)
 
@@ -73,7 +76,46 @@ def set_agent_working(is_working: bool, task_title: str = ""):
     state["agent_working"] = is_working
     state["agent_working_task"] = task_title if is_working else ""
     state["agent_working_since"] = datetime.now().isoformat() if is_working else None
+    if not is_working and state.get("pipeline", {}).get("phase") not in ("done", "failed"):
+        pipeline = state.get("pipeline", {})
+        if pipeline.get("phase") in ("building", "testing", "closing", "git_push"):
+            pipeline["phase"] = "idle"
+            pipeline["active_agent"] = ""
+            pipeline["updated_at"] = datetime.now().isoformat()
+            state["pipeline"] = pipeline
     save_state(state)
+
+
+def set_pipeline_status(
+    phase: str,
+    task_id: str = "",
+    task_title: str = "",
+    active_agent: str = "",
+    message: str = "",
+) -> None:
+    """Track sprint pipeline phase for UI telemetry (pickup → build → test → close → git)."""
+    state = load_state()
+    state["pipeline"] = {
+        "phase": phase,
+        "task_id": task_id,
+        "task_title": task_title,
+        "active_agent": active_agent,
+        "message": message,
+        "updated_at": datetime.now().isoformat(),
+    }
+    save_state(state)
+
+
+def get_pipeline_status() -> dict:
+    state = load_state()
+    return state.get("pipeline") or {
+        "phase": "idle",
+        "task_id": "",
+        "task_title": "",
+        "active_agent": "",
+        "message": "No active sprint task",
+        "updated_at": None,
+    }
 
 
 def is_agent_working() -> bool:
@@ -124,8 +166,9 @@ def get_dynamic_agent_statuses() -> dict:
         is_active = (name in agent_pids) or meta.get("status") in ("running", "active")
         statuses[name] = {
             "name": name.replace("_", " ").title(),
-            "status": "running",
+            "status": "running" if is_active else meta.get("status", "idle"),
             "current_task": meta.get("current_task", "Monitoring"),
+            "last_updated": meta.get("last_updated"),
             "pid": agent_pids.get(name)
         }
     return statuses

@@ -78,14 +78,19 @@ def warehouse_statistics(
 # ── Agents Status Endpoint ───────────────────────────────────────────────────────
 @app.get("/api/agents/status", tags=["Agents"])
 def get_agents_status():
-    from agents.memory_manager import get_dynamic_agent_statuses, load_state
+    from agents.memory_manager import get_dynamic_agent_statuses, load_state, get_pipeline_status, is_agent_working
     try:
         dynamic_agents = get_dynamic_agent_statuses()
         state = load_state()
+        pipeline = get_pipeline_status()
         return JSONResponse({
             "status": "success",
             "agents": dynamic_agents,
-            "last_active": state.get("last_active")
+            "last_active": state.get("last_active"),
+            "pipeline": pipeline,
+            "agent_working": is_agent_working(),
+            "agent_working_task": state.get("agent_working_task", ""),
+            "agent_working_since": state.get("agent_working_since"),
         })
     except Exception as e:
         print(f"[Agents API] Failed to compute dynamic agent status: {e}")
@@ -93,7 +98,11 @@ def get_agents_status():
         return JSONResponse({
             "status": "success",
             "agents": state.get("agents", {}),
-            "last_active": state.get("last_active")
+            "last_active": state.get("last_active"),
+            "pipeline": state.get("pipeline", {}),
+            "agent_working": state.get("agent_working", False),
+            "agent_working_task": state.get("agent_working_task", ""),
+            "agent_working_since": state.get("agent_working_since"),
         })
 
 

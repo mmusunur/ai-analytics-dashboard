@@ -278,11 +278,17 @@ export default function AiDataCopilot({ globalDate, globalTargetDb = 'pg_dev', o
               {showChart && (
                 <div style={{ height: '160px', width: '100%', marginTop: '6px' }}>
                   {(() => {
+                    const normalizeChartRow = (item) => ({
+                      warehouse: item.warehouse || (item.whs_num ? `WHS ${item.whs_num}` : 'Unknown'),
+                      cases_built: Number(item.cases_built ?? item.cases_bld_stg ?? 0),
+                      scratch_qty: Number(item.scratch_qty ?? item.whs_scrtch_qty_stg ?? 0),
+                    });
+                    const normalized = (copilotResult.chart_data || []).map(normalizeChartRow);
                     const targetW = copilotResult.filtered_whse ? String(copilotResult.filtered_whse).trim().replace(/^0+/, '') : '';
                     const chartItems = targetW
-                      ? copilotResult.chart_data.filter(item => String(item.warehouse).replace('WHS ', '').trim().replace(/^0+/, '') === targetW)
-                      : copilotResult.chart_data;
-                    const finalChartData = chartItems.length > 0 ? chartItems : copilotResult.chart_data;
+                      ? normalized.filter(item => String(item.warehouse).replace(/WHS\s*/i, '').trim().replace(/^0+/, '') === targetW)
+                      : normalized;
+                    const finalChartData = chartItems.length > 0 ? chartItems : normalized;
 
                     return (
                       <ResponsiveContainer width="100%" height="100%">
@@ -291,7 +297,7 @@ export default function AiDataCopilot({ globalDate, globalTargetDb = 'pg_dev', o
                           <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
                           <Tooltip
                             contentStyle={{ background: '#0f172a', border: '1px solid #7c3aed', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
-                            formatter={(val, name) => [val.toLocaleString() + ' cases', name === 'cases_built' ? 'Cases Built' : 'Scratch Qty']}
+                            formatter={(val, name) => [`${Number(val ?? 0).toLocaleString()} cases`, name === 'cases_built' ? 'Cases Built' : 'Scratch Qty']}
                           />
                           <Bar dataKey="cases_built" name="Cases Built" radius={[4, 4, 0, 0]}>
                             {finalChartData.map((entry, index) => (
@@ -308,7 +314,7 @@ export default function AiDataCopilot({ globalDate, globalTargetDb = 'pg_dev', o
             </div>
           )}
 
-          {copilotResult.suggested_actions && (
+          {Array.isArray(copilotResult.suggested_actions) && copilotResult.suggested_actions.length > 0 && (
             <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
               {copilotResult.suggested_actions.map((act) => (
                 <span key={act} style={{ fontSize: '11px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', padding: '2px 8px', borderRadius: '4px' }}>
