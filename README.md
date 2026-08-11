@@ -1,6 +1,6 @@
-# 🚀 AI Analytics Dashboard
+# ⚡ AgenticOps AI — MCP-Driven Autonomous Enterprise Platform
 
-> An agentic, AI-powered Data Analytics Dashboard built with **FastAPI + React**, managed and tested by **Autonomous AI Agents, Self-Healing Watchdog Supervisor, and Persistent Memory Engine**.
+> An autonomous multi-agent enterprise control plane powered by **MCP (Model Context Protocol)**, **FastAPI + React**, and an **Autonomous Agent Fleet with Live Telemetry**.
 
 ---
 

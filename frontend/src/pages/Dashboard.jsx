@@ -159,8 +159,8 @@ export default function Dashboard() {
       {/* ── Global Date & DB Selector Header ── */}
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h1 className="page-title">Warehouse Sales &amp; Invoice Analytics Dashboard</h1>
-          <p className="page-subtitle">Sprint AAD-5 · Real-time Warehouse Item &amp; Procurement Analytics</p>
+          <h1 className="page-title">AgenticOps AI — Enterprise Control Plane</h1>
+          <p className="page-subtitle">MCP-Driven Multi-Agent Fleet Telemetry &amp; Autonomous Telemetry Dashboard</p>
         </div>
 
         {/* Global Date + DB Controls + Submit Button */}

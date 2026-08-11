@@ -47,6 +47,8 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 - 📄 [`tasks/task_5_database_service.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_5_database_service.md) — Multi-Database SQL Service
 - 📄 [`tasks/task_7_git_automation.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_7_git_automation.md) — Pre-Approved Git Automation, Branch Merges, Anti-Spam Commit Filter & Conflict Resolution
 - 📄 [`tasks/task_8_parallel_background_agents.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_8_parallel_background_agents.md) — Continuous Parallel Background Agent Fleet
+- 📄 [`tasks/task_29_multi_project_autonomous_execution.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_29_multi_project_autonomous_execution.md) — Multi-Project Workspace Scanning (`agentbuilder`) & End-to-End Execution Mandate
+- 📄 [`tasks/task_30_sprint_board_browser_navigation.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_30_sprint_board_browser_navigation.md) — Sprint Board Browser Navigation, Page Refresh & Dynamic Dropdown E2E Verification
 - 📄 [`tasks/task_9_continuous_application_uptime.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_9_continuous_application_uptime.md) — Continuous Server Uptime & Mandatory .bat / .sh Launchers
 
 ---

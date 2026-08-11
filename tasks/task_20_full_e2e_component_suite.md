@@ -31,6 +31,8 @@ This task specification governs the **Full Automated Testing Suite** (Pytest Uni
 
 ---
 
-## 🚨 Section 2: Quality Gate Push Policy
+## 🚨 Section 2: Quality Gate Push Policy & Excel Matrix Standards
+- **Sequential Testing Gate:** Real Playwright Browser Tests (`pytest tests/browser/`) are strictly required AFTER unit tests pass. `TEST_CASES.xlsx` is ONLY updated if both unit and browser tests pass 100%.
 - **100% Test Pass Rate Mandate:** No code commit or git push is permitted unless all unit tests and browser tests pass cleanly.
-- **Zero Hardcoding Rule:** Dates and warehouse facility numbers MUST be computed dynamically — no static hardcoded test strings.
+- **Zero Hardcoding Rule:** Dates, warehouse facility numbers, and sprint projects MUST be computed dynamically — no static hardcoded test strings.
+- **🚫 Plain-Language Test Description Standard:** All test case `Expected Result` and `Actual Result` spreadsheet descriptions MUST avoid technical API verbs and path jargon (such as `GET /api/...`, `POST`, `HTTP 200`, `endpoint`). Entries must be written in clear, simple, human-readable plain English sentences describing system functionality.

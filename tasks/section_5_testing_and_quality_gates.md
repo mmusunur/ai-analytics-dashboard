@@ -17,7 +17,8 @@ This document defines the automated testing procedures, Playwright browser testi
 - **Functionality:**
   - Executes unit tests and Playwright browser tests in real-time.
   - Automatically generates and overwrites `tests/TEST_CASES.xlsx` with formatted, color-coded rows (Green for `PASS`, Red for `FAIL`).
-  - Contains 58 detailed test case records with columns: `Case ID`, `Case Name`, `Functionality`, `Expected Result`, `Actual Result`, `Result`.
+  - Contains 64 detailed test case records across 7 segregated feature categories.
+  - **🚫 Plain-Language Description Standard Directive:** All `Expected Result` and `Actual Result` entries MUST avoid technical API path/verb jargon (such as `GET /api/...`, `POST`, `HTTP 200`, `endpoint`). Every entry MUST be written in clear, simple, human-readable plain English sentences describing system behavior.
 
 ---
 
@@ -35,6 +36,10 @@ This document defines the automated testing procedures, Playwright browser testi
 
 ---
 
-## 🚨 4. Mandatory Quality Gate Push Policy
+## 🚨 4. Mandatory Sequential Quality Gate & Excel Update Policy
+- **Sequential 2-Stage Pipeline Directive:**
+  1. **Stage 1 (Unit Tests):** Execute `python -m pytest tests/unit/ -v`.
+  2. **Stage 2 (Real Browser Tests):** Execute `python -m pytest tests/browser/ -v`.
+  3. **Stage 3 (Excel Sync Gate):** `TEST_CASES.xlsx` matrix is ONLY generated/updated IF AND ONLY IF both Stage 1 (Unit Tests) AND Stage 2 (Browser Tests) achieve a 100% PASS rate.
 - **100% Pass Rate Mandate:** No code commit or git push is permitted unless all unit tests and browser tests pass cleanly.
-- **Zero Hardcoding Directive:** All dates and warehouse facility numbers MUST be extracted dynamically from live DOM or API responses — no static hardcoded strings.
+- **Zero Hardcoding Directive:** All dates, warehouse facility numbers, and sprint projects MUST be extracted dynamically from live DOM or API responses — no static hardcoded test strings.

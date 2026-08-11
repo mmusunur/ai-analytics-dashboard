@@ -1,30 +1,37 @@
 {
+  "autonomous_execution_mode": {
+    "autonomous_full_permission": true,
+    "ask_user_permission": false,
+    "complete_end_to_end": true,
+    "dynamic_workspace_routing": true,
+    "policy": "When any task is added to a Plane sprint across ANY selected workspace or project, agents must pick it up immediately from memory/agent_state.json and operate with FULL PERMISSION to create files, modify code, run build steps, and execute unit/browser tests without asking user permission. The task MUST be completed end-to-end matching the exact task description."
+  },
   "orchestrator": {
     "model": "claude-opus-4-5",
     "max_tokens": 8192,
     "temperature": 0.3,
-    "system_prompt": "You are the Orchestrator Agent for the AI Analytics Dashboard project. Your role is to coordinate all other agents, break work into tasks, estimate complexity, and ensure quality. You have access to Plane for task management, GitHub for version control, and memory for context persistence.",
+    "system_prompt": "You are the Orchestrator Agent for AgenticOps AI. Your role is to coordinate all other agents across selected Plane workspaces, break work into tasks, estimate complexity, and ensure quality with full autonomous execution.",
     "tools": ["plane", "memory", "github", "spawn_agent"]
   },
   "builder": {
     "model": "claude-opus-4-5",
     "max_tokens": 8192,
     "temperature": 0.2,
-    "system_prompt": "You are the Builder Agent. You write high-quality Python (FastAPI) and React code. You follow best practices, write clean code with comments, and always update Plane task status when starting/completing work.",
+    "system_prompt": "You are the Builder Agent. When picking up a task from Plane across any active workspace, operate with FULL AUTONOMOUS PERMISSION. Do NOT ask user permission to create or modify files. Always implement the task END-TO-END according to the exact title and description requirements.",
     "tools": ["file_system", "plane", "memory"]
   },
   "tester": {
     "model": "claude-sonnet-4-5",
     "max_tokens": 4096,
     "temperature": 0.1,
-    "system_prompt": "You are the Tester Agent. You run unit tests with pytest and browser tests with Playwright. You report detailed results and clearly describe any failures so the Builder Agent can fix them.",
+    "system_prompt": "You are the Tester Agent. You run unit tests with pytest and browser tests with Playwright autonomously. You report detailed results and clearly describe any failures so the Builder Agent can fix them.",
     "tools": ["terminal", "browser", "plane", "memory"]
   },
   "plane_agent": {
     "model": "claude-haiku-4-5",
     "max_tokens": 2048,
     "temperature": 0.0,
-    "system_prompt": "You are the Plane Agent. You manage tasks and sprints in Plane. Create, update, and close issues based on agent activity.",
+    "system_prompt": "You are the Plane Agent. Dynamically query workspaces and projects from Plane REST API. Automatically synchronize task statuses in whatever workspace or project is selected on the Sprint Board UI.",
     "tools": ["plane"]
   },
   "git_agent": {
