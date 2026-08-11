@@ -50,6 +50,9 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 - 📄 [`tasks/task_29_multi_project_autonomous_execution.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_29_multi_project_autonomous_execution.md) — Multi-Project Workspace Scanning (`agentbuilder`) & End-to-End Execution Mandate
 - 📄 [`tasks/task_30_sprint_board_browser_navigation.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_30_sprint_board_browser_navigation.md) — Sprint Board Browser Navigation, Page Refresh & Dynamic Dropdown E2E Verification
 - 📄 [`tasks/task_9_continuous_application_uptime.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_9_continuous_application_uptime.md) — Continuous Server Uptime & Mandatory .bat / .sh Launchers
+- 📄 [`tasks/task_30_agent_monitoring_watchdog.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_30_agent_monitoring_watchdog.md) — Real-Time Agent Monitoring & Watchdog Supervisor
+- 📄 [`tasks/task_32_application_uptime_and_sprint_pipeline.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_32_application_uptime_and_sprint_pipeline.md) — Application Must Stay Running + Sprint Pipeline Quality Gates
+- 📄 [`tasks/task_33_automatic_documentation_updates.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_33_automatic_documentation_updates.md) — Auto-Update README, tasks/, docs/, PPTX + DOCX on Major Changes (`python docs/sync_all_documentation.py`)
 
 ---
 
@@ -63,4 +66,5 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 ## 🧪 Section 5: Automated Testing & Excel Matrix Tasks
 - 📄 [`tasks/section_5_testing_and_quality_gates.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/section_5_testing_and_quality_gates.md) — Automated Testing, Excel Matrix Updates & Quality Gates
 - 📄 [`tasks/task_10_end_to_end_parameter_testing.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_10_end_to_end_parameter_testing.md) — Interactive Browser Parameter Combination Testing
-- 📄 [`tasks/task_20_full_e2e_component_suite.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_20_full_e2e_component_suite.md) — Full Playwright Browser E2E Suite (14 Scenarios) & Pytest Unit Suite (51 Tests)
+- 📄 [`tasks/task_20_full_e2e_component_suite.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_20_full_e2e_component_suite.md) — Full Playwright Browser E2E Suite (39 Scenarios) & Pytest Unit Suite (65 Tests)
+- 📄 [`tasks/task_32_application_uptime_and_sprint_pipeline.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_32_application_uptime_and_sprint_pipeline.md) — Servers Must Stay Running Before Browser Tests & Sprint Closure
