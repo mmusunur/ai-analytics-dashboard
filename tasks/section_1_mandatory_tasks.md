@@ -17,10 +17,10 @@ The application system provides mandatory platform-specific execution launcher s
 The agent network executes the complete 6-stage task workflow autonomously:
 
 ```
-┌─────────────────────────┐      ┌─────────────────────────┐      ┌─────────────────────────┐
-│ 1. Sprint Task Pickup   │ ───► │ 2. Title & NLP Parsing  │ ───► │ 3. Real Code Building   │
-│ (sprint_watcher_agent)  │      │ (builder_agent classifier)     │ (React & FastAPI edit)  │
-└─────────────────────────┘      └─────────────────────────┘      └─────────────────────────┘
+┌──────────────────────────────────────┐      ┌─────────────────────────┐      ┌─────────────────────────┐
+│ 1. Multi-Workspace & Project Pickup  │ ───► │ 2. Title & NLP Parsing  │ ───► │ 3. Real Code Building   │
+│ (sprint_watcher_agent scanner)       │      │ (builder_agent classifier)     │ (React & FastAPI edit)  │
+└──────────────────────────────────────┘      └─────────────────────────┘      └─────────────────────────┘
              │                                                                 │
              ▼                                                                 ▼
 ┌─────────────────────────┐      ┌─────────────────────────┐      ┌─────────────────────────┐
@@ -68,13 +68,25 @@ The agent network executes the complete 6-stage task workflow autonomously:
 
 ---
 
-## 5. Automatic README.md Maintenance Mandate
-- **Mandatory Documentation Directive:**
-  - The AI AGENT MUST automatically maintain and update [`README.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/README.md) whenever new features, backend API endpoints, multi-database architecture parameters, or agent processes are added or updated.
+## 📝 5. Automatic README.md Maintenance & Per-Turn Conversation Memory Directives
+- **Automatic README Updates:** Whenever new features, components, or services are added, automatically update [`README.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/README.md).
+- **Per-Turn Memory Logging:** Update `memory/conversations/assistant_conversation.jsonl`, `memory/task_history/YYYY-MM-DD_task_history.jsonl`, and `memory/agent_state.json` on every user interaction turn.
 
 ---
 
-## 🧠 6. Mandatory Per-Turn Conversation Memory Update Directive
+## 🤖 6. Mandatory README Agent LLM Model Allocation Table Preservation Rule
+- **Strict Preservation Mandate:** Whenever modifying or updating [`README.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/README.md), **DO NOT remove, delete, or modify** the `## 🤖 Autonomous Agent Fleet & LLM Model Allocation` table.
+- The table must permanently preserve the assigned model for each agent:
+  - **Orchestrator Agent**: `Claude 3.5 Opus` (`claude-opus-4-5`)
+  - **Builder Agent**: `Claude 3.5 Opus` (`claude-opus-4-5`)
+  - **Tester Agent**: `Claude 3.5 Sonnet` (`claude-sonnet-4-5`)
+  - **Sprint Watcher**: `Claude 3.5 Haiku` (`claude-haiku-4-5`)
+  - **Git Agent**: `Claude 3.5 Haiku` (`claude-haiku-4-5`)
+  - **Plane Agent**: `Claude 3.5 Haiku` (`claude-haiku-4-5`)
+
+---
+
+## 🧠 7. Mandatory Per-Turn Conversation Memory Update Directive
 - **Mandatory Memory Sync Rule:**
   - On every user conversation exchange, the agent MUST automatically invoke `update_conversation_memory()` in [`agents/memory_manager.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/agents/memory_manager.py).
   - Appends query and response summaries to `memory/conversations/assistant_conversation.jsonl`, updates daily task logs in `memory/task_history/YYYY-MM-DD_task_history.jsonl`, and updates `memory/agent_state.json`.

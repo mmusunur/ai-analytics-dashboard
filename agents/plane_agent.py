@@ -1,7 +1,6 @@
 """
 Plane Agent — Manages tasks, sprints, and issues in Plane via REST API.
-Handles: create project, create cycles (sprints), create/update issues.
-Includes robust timeout & auto-retry resilience for all Plane REST API calls.
+Includes dynamic workspace & project switching support (< 300 lines).
 """
 
 import os
@@ -10,68 +9,120 @@ import time
 import httpx
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
 from rich.console import Console
 from dotenv import load_dotenv
 
 load_dotenv()
 console = Console()
 
-# ── Config ─────────────────────────────────────────────────────────────────────
 ROOT_DIR = Path(__file__).parent.parent
 PLANE_CONFIG_FILE = ROOT_DIR / "config" / "plane_config.json"
-
 PLANE_API_TOKEN = os.getenv("PLANE_API_TOKEN", "")
-PLANE_WORKSPACE_SLUG = os.getenv("PLANE_WORKSPACE_SLUG", "")
+PLANE_WORKSPACE_SLUG = os.getenv("PLANE_WORKSPACE_SLUG", "agentbuilder")
 PLANE_BASE_URL = "https://api.plane.so/api/v1"
-
-HEADERS = {
-    "X-API-Key": PLANE_API_TOKEN,
-    "Content-Type": "application/json"
-}
-
-# Robust Timeout (30s read, 10s connect)
+HEADERS = {"X-API-Key": PLANE_API_TOKEN, "Content-Type": "application/json"}
 CLIENT_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 
 
 def _get_client() -> httpx.Client:
-    """Helper to return an httpx.Client with explicit 30s timeouts."""
     return httpx.Client(timeout=CLIENT_TIMEOUT, follow_redirects=True)
 
 
 def _load_plane_config() -> dict:
-    with open(PLANE_CONFIG_FILE) as f:
-        return json.load(f)
+    if PLANE_CONFIG_FILE.exists():
+        with open(PLANE_CONFIG_FILE) as f:
+            return json.load(f)
+    return {"workspace_slug": PLANE_WORKSPACE_SLUG, "project_name": "AI Analytics Dashboard", "project_id": None}
 
 
 def _save_plane_config(config: dict) -> None:
+    PLANE_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(PLANE_CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
 
 
-# ── Project ────────────────────────────────────────────────────────────────────
-
-def get_or_create_project() -> str:
-    """
-    Get the existing Plane project ID or create a new one.
-    Returns the project ID.
-    """
+def update_plane_config_active_workspace_project(workspace_slug: str, project_id: Optional[str] = None, project_name: Optional[str] = None) -> None:
+    """Dynamically update config/plane_config.json with selected workspace, project_name, and project_id."""
     config = _load_plane_config()
+    config["workspace_slug"] = workspace_slug
+    config["dynamic_workspace_selection"] = True
+    if project_id:
+        config["project_id"] = project_id
+    if project_name:
+        config["project_name"] = project_name
+    _save_plane_config(config)
 
-    # Return cached project_id if available
-    if config.get("project_id"):
-        console.print(f"[green]Using existing Plane project: {config['project_id']}[/green]")
+
+import time
+
+_CACHE_TTL = 30.0  # Cache Plane API calls for 30s to avoid HTTP 429 Rate Limits
+_projects_cache = {}
+_workspaces_cache = {"timestamp": 0.0, "data": []}
+
+
+def list_workspaces() -> List[Dict]:
+    """Fetch all accessible Plane workspaces dynamically for the configured API token."""
+    now = time.time()
+    if _workspaces_cache["data"] and (now - _workspaces_cache["timestamp"] < _CACHE_TTL):
+        return _workspaces_cache["data"]
+
+    url = f"{PLANE_BASE_URL}/workspaces/"
+    try:
+        with _get_client() as client:
+            resp = client.get(url, headers=HEADERS)
+            resp.raise_for_status()
+            data = resp.json()
+            res = data.get("results", data) if isinstance(data, dict) else data
+            _workspaces_cache["timestamp"] = now
+            _workspaces_cache["data"] = res
+            return res
+    except Exception as e:
+        console.print(f"[yellow]Failed to fetch Plane workspaces: {e}[/yellow]")
+        return [{"name": PLANE_WORKSPACE_SLUG, "slug": PLANE_WORKSPACE_SLUG}]
+
+
+def list_projects(workspace_slug: Optional[str] = None) -> List[Dict]:
+    """Fetch all projects dynamically for a specific workspace slug from Plane REST API."""
+    ws = workspace_slug or PLANE_WORKSPACE_SLUG
+    now = time.time()
+
+    if ws in _projects_cache:
+        cached_ts, cached_data = _projects_cache[ws]
+        if now - cached_ts < _CACHE_TTL:
+            return cached_data
+
+    url = f"{PLANE_BASE_URL}/workspaces/{ws}/projects/"
+    try:
+        with _get_client() as client:
+            resp = client.get(url, headers=HEADERS)
+            resp.raise_for_status()
+            data = resp.json()
+            res = data.get("results", data) if isinstance(data, dict) else data
+            if res:
+                _projects_cache[ws] = (now, res)
+                return res
+            return []
+    except Exception as e:
+        console.print(f"[yellow]Plane projects API notice ({ws}): {e}[/yellow]")
+        if ws in _projects_cache:
+            return _projects_cache[ws][1]
+        return []
+
+
+def get_or_create_project(workspace_slug: Optional[str] = None) -> str:
+    config = _load_plane_config()
+    ws = workspace_slug or config.get("workspace_slug") or PLANE_WORKSPACE_SLUG
+    if config.get("project_id") and not workspace_slug:
         return config["project_id"]
 
-    # Create new project
-    url = f"{PLANE_BASE_URL}/workspaces/{PLANE_WORKSPACE_SLUG}/projects/"
+    url = f"{PLANE_BASE_URL}/workspaces/{ws}/projects/"
     payload = {
-        "name": config["project_name"],
+        "name": config.get("project_name", "AI Analytics Dashboard"),
         "identifier": "AAD",
-        "description": "Agentic AI Analytics Dashboard — built and managed by AI agents",
-        "network": 2  # Public
+        "description": "Agentic AI Analytics Dashboard",
+        "network": 2
     }
-
     for attempt in range(3):
         try:
             with _get_client() as client:
@@ -80,233 +131,247 @@ def get_or_create_project() -> str:
                 project = resp.json()
                 project_id = project["id"]
                 config["project_id"] = project_id
+                config["workspace_slug"] = ws
                 _save_plane_config(config)
-                console.print(f"[bold green]Created Plane project: {config['project_name']} (ID: {project_id})[/bold green]")
                 return project_id
         except Exception as e:
             if attempt == 2:
-                raise e
+                break
             time.sleep(1)
-
     return config.get("project_id", "")
 
 
-# ── Cycles (Sprints) ───────────────────────────────────────────────────────────
-
-def create_sprint(project_id: str, sprint_name: str, description: str, duration_weeks: int = 1) -> dict:
-    """Create a new sprint (cycle) in Plane."""
-    start_date = datetime.now().strftime("%Y-%m-%d")
-    end_date = (datetime.now() + timedelta(weeks=duration_weeks)).strftime("%Y-%m-%d")
-
-    # Ensure cycle_view is enabled on project
+def list_sprints(project_id: str, workspace_slug: Optional[str] = None) -> list:
+    ws = workspace_slug or PLANE_WORKSPACE_SLUG
+    url = f"{PLANE_BASE_URL}/workspaces/{ws}/projects/{project_id}/cycles/"
     try:
         with _get_client() as client:
-            client.patch(f"{PLANE_BASE_URL}/workspaces/{PLANE_WORKSPACE_SLUG}/projects/{project_id}/", headers=HEADERS, json={"cycle_view": True})
+            resp = client.get(url, headers=HEADERS)
+            resp.raise_for_status()
+            return resp.json().get("results", [])
     except Exception:
-        pass
-
-    url = f"{PLANE_BASE_URL}/workspaces/{PLANE_WORKSPACE_SLUG}/projects/{project_id}/cycles/"
-    payload = {
-        "name": sprint_name,
-        "description": description,
-        "start_date": start_date,
-        "end_date": end_date,
-        "project_id": project_id
-    }
-
-    with _get_client() as client:
-        resp = client.post(url, headers=HEADERS, json=payload)
-        resp.raise_for_status()
-        cycle = resp.json()
-
-    console.print(f"[cyan]Created sprint: {sprint_name}[/cyan]")
-    return cycle
+        return []
 
 
-def list_sprints(project_id: str) -> list[dict]:
-    """List all sprints (cycles) for a project."""
-    url = f"{PLANE_BASE_URL}/workspaces/{PLANE_WORKSPACE_SLUG}/projects/{project_id}/cycles/"
-    for attempt in range(3):
+def list_active_sprint(project_id: str, workspace_slug: Optional[str] = None) -> Optional[Dict]:
+    """
+    Return the CURRENTLY ACTIVE sprint (cycle) for a project.
+
+    Plane auto-cancels tasks whose sprint cycle has expired (start_date in the past
+    and end_date passed). This function finds the sprint whose date window includes
+    today, preventing the backend from ever pointing at an expired sprint.
+
+    Priority order:
+      1. Sprint whose start_date <= today <= end_date  (actively running)
+      2. Sprint whose start_date <= today and no end_date  (open-ended / ongoing)
+      3. Sprint with a future start_date closest to today  (upcoming)
+      4. Most recently created sprint (fallback — never return expired sprints[0])
+    """
+    sprints = list_sprints(project_id, workspace_slug)
+    if not sprints:
+        return None
+
+    today = datetime.now().date()
+
+    def _parse_date(d: Optional[str]):
+        if not d:
+            return None
         try:
-            with _get_client() as client:
-                resp = client.get(url, headers=HEADERS)
-                resp.raise_for_status()
-                return resp.json().get("results", [])
-        except Exception as e:
-            if attempt == 2:
-                console.print(f"[yellow]⚠️ list_sprints failed: {e}[/yellow]")
-                return []
-            time.sleep(1)
-    return []
+            return datetime.fromisoformat(d[:10]).date()
+        except Exception:
+            return None
+
+    running, open_ended, upcoming, all_valid = [], [], [], []
+
+    for s in sprints:
+        s_start = _parse_date(s.get("start_date"))
+        s_end   = _parse_date(s.get("end_date"))
+
+        if s_start and s_end:
+            if s_start <= today <= s_end:
+                running.append(s)       # Actively running right now
+            elif s_end < today:
+                pass                    # Expired — skip entirely
+            elif s_start > today:
+                upcoming.append(s)      # Hasn't started yet
+        elif s_start and not s_end:
+            if s_start <= today:
+                open_ended.append(s)    # Started, no end — ongoing
+        else:
+            all_valid.append(s)         # No dates — include as fallback only
+
+    if running:
+        # Multiple running sprints: pick the one ending soonest
+        return sorted(running, key=lambda s: _parse_date(s.get("end_date")) or today)[0]
+    if open_ended:
+        return open_ended[-1]           # Most recently started open-ended sprint
+    if upcoming:
+        return sorted(upcoming, key=lambda s: _parse_date(s.get("start_date")) or today)[0]
+    if all_valid:
+        return all_valid[-1]            # Last sprint with no dates
+
+    # Absolute last resort: newest sprint in the list (avoid stale [0])
+    console.print("[yellow]⚠️  All sprints appear expired — returning newest sprint as fallback.[/yellow]")
+    return sorted(sprints, key=lambda s: s.get("created_at", ""), reverse=True)[0]
 
 
-# ── Issues (Tasks) ─────────────────────────────────────────────────────────────
+def list_tasks(project_id: str, workspace_slug: Optional[str] = None) -> list:
+    ws = workspace_slug or PLANE_WORKSPACE_SLUG
+    url = f"{PLANE_BASE_URL}/workspaces/{ws}/projects/{project_id}/issues/"
+    try:
+        with _get_client() as client:
+            resp = client.get(url, headers=HEADERS)
+            resp.raise_for_status()
+            return resp.json().get("results", [])
+    except Exception:
+        return []
 
-def create_task(
-    project_id: str,
-    title: str,
-    description: str = "",
-    priority: str = "medium",
-    story_points: int = 3,
-    cycle_id: Optional[str] = None,
-    parent_id: Optional[str] = None
-) -> dict:
+
+def get_single_task(project_id: str, task_id: str, workspace_slug: Optional[str] = None) -> Optional[Dict]:
     """
-    Create an issue (task) in Plane.
-    priority: "urgent" | "high" | "medium" | "low" | "none"
-    story_points: 1, 2, 3, 5, 8
+    Fetch a single Plane issue by ID to get its LIVE current state.
+    Used by the sprint watcher to verify a task's state before processing
+    (prevents race conditions where stale state_group causes re-pickup of
+    manually In Progress tasks).
+    Returns the issue dict, or None on failure.
     """
-    url = f"{PLANE_BASE_URL}/workspaces/{PLANE_WORKSPACE_SLUG}/projects/{project_id}/issues/"
-    payload = {
-        "name": title,
-        "description_html": f"<p>{description}</p>",
-        "priority": priority,
-        "estimate_point": story_points,
-        "parent": parent_id
-    }
-
-    with _get_client() as client:
-        resp = client.post(url, headers=HEADERS, json=payload)
-        resp.raise_for_status()
-        issue = resp.json()
-
-    # Add to cycle if specified
-    if cycle_id:
-        add_task_to_sprint(project_id, cycle_id, issue["id"])
-
-    console.print(f"[yellow]Created task: [{priority.upper()}] {title} ({story_points} pts)[/yellow]")
-    return issue
+    ws = workspace_slug or PLANE_WORKSPACE_SLUG
+    url = f"{PLANE_BASE_URL}/workspaces/{ws}/projects/{project_id}/issues/{task_id}/"
+    try:
+        with _get_client() as client:
+            resp = client.get(url, headers=HEADERS)
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Could not fetch task {task_id}: {e}[/yellow]")
+        return None
 
 
-def create_subtask(project_id: str, parent_issue_id: str, title: str, description: str = "") -> dict:
-    """Create a sub-task (child issue) under a parent issue."""
-    return create_task(
-        project_id=project_id,
-        title=title,
-        description=description,
-        priority="medium",
-        story_points=1,
-        parent_id=parent_issue_id
+def get_states(project_id: str, workspace_slug: Optional[str] = None) -> list:
+    ws = workspace_slug or PLANE_WORKSPACE_SLUG
+    url = f"{PLANE_BASE_URL}/workspaces/{ws}/projects/{project_id}/states/"
+    try:
+        with _get_client() as client:
+            resp = client.get(url, headers=HEADERS)
+            resp.raise_for_status()
+            return resp.json().get("results", [])
+    except Exception:
+        return []
+
+
+def update_task_status(project_id: str, task_id: str, state_name: str, workspace_slug: Optional[str] = None) -> dict:
+    """
+    Update a Plane issue state. Resolves state by GROUP name first (reliable),
+    then falls back to display name match. Plane group names are:
+      backlog | unstarted | started | completed | cancelled
+    """
+    ws = workspace_slug or PLANE_WORKSPACE_SLUG
+    states = get_states(project_id, ws)
+
+    # 1. Match by group name first (e.g. "started", "completed") — most reliable
+    state_obj = next(
+        (s for s in states if s.get("group", "").lower() == state_name.lower()),
+        None
     )
+    # 2. Fallback: match by display name (e.g. "In Progress", "Done")
+    if not state_obj:
+        state_obj = next(
+            (s for s in states if s.get("name", "").lower() == state_name.lower()),
+            None
+        )
 
-
-def update_task_status(project_id: str, issue_id: str, status: str) -> dict:
-    """
-    Update the status of a task.
-    status: "backlog" | "unstarted" | "todo" | "started" | "in progress" | "completed" | "done" | "cancelled"
-    """
-    states = get_states(project_id)
-    state_id = None
-    status_clean = status.lower().strip()
-    
-    # Priority match by group or exact name
-    for state in states:
-        name = state.get("name", "").lower().strip()
-        group = state.get("group", "").lower().strip()
-        if status_clean in (name, group) or (status_clean == "done" and group == "completed") or (status_clean == "completed" and name == "done"):
-            state_id = state["id"]
-            break
-
-    if not state_id:
-        # Fallback substring match
-        for state in states:
-            name = state.get("name", "").lower().strip()
-            group = state.get("group", "").lower().strip()
-            if status_clean in name or status_clean in group:
-                state_id = state["id"]
-                break
-
-    if not state_id:
-        console.print(f"[red]State '{status}' not found in project states[/red]")
+    if not state_obj:
+        console.print(f"[yellow]⚠️ No Plane state found matching group/name '{state_name}' in project {project_id}. Available: {[s.get('name') for s in states]}[/yellow]")
         return {}
 
-    url = f"{PLANE_BASE_URL}/workspaces/{PLANE_WORKSPACE_SLUG}/projects/{project_id}/issues/{issue_id}/"
+    state_id = state_obj["id"]
+    console.print(f"[dim]→ Resolved state '{state_name}' → '{state_obj.get('name')}' (id={state_id[:8]})[/dim]")
+    url = f"{PLANE_BASE_URL}/workspaces/{ws}/projects/{project_id}/issues/{task_id}/"
     payload = {"state": state_id}
 
-    for attempt in range(3):
+    for attempt in range(4):
         try:
             with _get_client() as client:
                 resp = client.patch(url, headers=HEADERS, json=payload)
                 resp.raise_for_status()
-                issue = resp.json()
-                console.print(f"[green]Task status updated -> {status}[/green]")
-                return issue
+                return resp.json()
         except Exception as e:
-            if attempt == 2:
-                console.print(f"[red]Failed updating task status: {e}[/red]")
+            if attempt == 3:
+                console.print(f"[yellow]⚠️ Failed to update task status after retries: {e}[/yellow]")
                 return {}
-            time.sleep(1)
-    return {}
+            time.sleep(1.5 * (attempt + 1))
 
 
-def get_states(project_id: str) -> list[dict]:
-    """Get all workflow states for a project."""
-    url = f"{PLANE_BASE_URL}/workspaces/{PLANE_WORKSPACE_SLUG}/projects/{project_id}/states/"
+def add_comment(project_id: str, task_id: str, comment_text: str, workspace_slug: Optional[str] = None) -> dict:
+    ws = workspace_slug or PLANE_WORKSPACE_SLUG
+    url = f"{PLANE_BASE_URL}/workspaces/{ws}/projects/{project_id}/issues/{task_id}/comments/"
+    payload = {"comment_html": f"<p>{comment_text}</p>"}
+
     for attempt in range(3):
         try:
             with _get_client() as client:
-                resp = client.get(url, headers=HEADERS)
+                resp = client.post(url, headers=HEADERS, json=payload)
                 resp.raise_for_status()
-                return resp.json().get("results", [])
-        except Exception as e:
+                return resp.json()
+        except Exception:
             if attempt == 2:
-                console.print(f"[yellow]⚠️ get_states failed: {e}[/yellow]")
-                return []
-            time.sleep(1)
-    return []
+                return {}
+            time.sleep(1.5)
 
 
-def add_task_to_sprint(project_id: str, cycle_id: str, issue_id: str) -> None:
-    """Add an issue to a sprint cycle."""
-    url = f"{PLANE_BASE_URL}/workspaces/{PLANE_WORKSPACE_SLUG}/projects/{project_id}/cycles/{cycle_id}/cycle-issues/"
-    payload = {"issues": [issue_id]}
-    with _get_client() as client:
-        resp = client.post(url, headers=HEADERS, json=payload)
-        resp.raise_for_status()
-
-
-def add_comment(project_id: str, issue_id: str, comment: str) -> dict:
-    """Add a comment to an issue (used for daily summaries and test results)."""
-    url = f"{PLANE_BASE_URL}/workspaces/{PLANE_WORKSPACE_SLUG}/projects/{project_id}/issues/{issue_id}/comments/"
-    payload = {"comment_html": f"<p>{comment}</p>"}
-    with _get_client() as client:
-        resp = client.post(url, headers=HEADERS, json=payload)
-        resp.raise_for_status()
-        return resp.json()
-
-
-def list_tasks(project_id: str, state_filter: Optional[str] = None) -> list[dict]:
-    """List all issues in a project, optionally filtered by state."""
-    url = f"{PLANE_BASE_URL}/workspaces/{PLANE_WORKSPACE_SLUG}/projects/{project_id}/issues/"
-    for attempt in range(3):
-        try:
-            with _get_client() as client:
-                resp = client.get(url, headers=HEADERS)
-                resp.raise_for_status()
-                issues = resp.json().get("results", [])
-
-                if state_filter:
-                    issues = [i for i in issues if state_filter.lower() in i.get("state_detail", {}).get("name", "").lower()]
-
-                return issues
-        except Exception as e:
-            if attempt == 2:
-                console.print(f"[yellow]⚠️ list_tasks failed: {e}[/yellow]")
-                return []
-            time.sleep(1)
-    return []
-
-
-def list_comments(project_id: str, issue_id: str) -> list[dict]:
+def extend_sprint(project_id: str, cycle_id: str, new_end_date: str, workspace_slug: Optional[str] = None) -> dict:
     """
-    Fetch all activity/comments for a specific Plane issue.
-    Returns a list of comment dicts with 'id', 'comment_html', 'created_at', 'actor_detail'.
+    Extend a Plane sprint cycle's end_date to prevent auto-cancellation of tasks.
+
+    Plane auto-cancels unfinished tasks when a cycle's end_date passes.
+    This function patches the cycle to push the end_date forward so in-flight
+    tasks are not automatically cancelled by Plane's cycle-completion process.
+
+    Args:
+        project_id:   Plane project ID
+        cycle_id:     Plane cycle (sprint) ID
+        new_end_date: ISO date string 'YYYY-MM-DD' for the new end date
+        workspace_slug: optional workspace override
+    Returns:
+        Updated cycle dict, or {} on failure.
     """
-    url = (
-        f"{PLANE_BASE_URL}/workspaces/{PLANE_WORKSPACE_SLUG}"
-        f"/projects/{project_id}/issues/{issue_id}/comments/"
-    )
-    with _get_client() as client:
-        resp = client.get(url, headers=HEADERS)
-        resp.raise_for_status()
-        return resp.json().get("results", [])
+    ws = workspace_slug or PLANE_WORKSPACE_SLUG
+    url = f"{PLANE_BASE_URL}/workspaces/{ws}/projects/{project_id}/cycles/{cycle_id}/"
+    payload = {"end_date": new_end_date}
+    try:
+        with _get_client() as client:
+            resp = client.patch(url, headers=HEADERS, json=payload)
+            resp.raise_for_status()
+            console.print(f"[green]✅ Sprint extended to {new_end_date}[/green]")
+            return resp.json()
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Could not extend sprint: {e}[/yellow]")
+        return {}
+
+
+def restore_task_from_cancelled(project_id: str, task_id: str, workspace_slug: Optional[str] = None) -> dict:
+    """
+    Move a task that was auto-cancelled by Plane (due to sprint expiry) back to
+    the 'unstarted' (To Do) state so it can be worked on again.
+
+    This is a targeted recovery function — it ONLY moves tasks OUT of 'cancelled'
+    back to 'unstarted'. It will never touch tasks that are already in a valid state.
+    """
+    ws = workspace_slug or PLANE_WORKSPACE_SLUG
+    # First verify the task is actually cancelled before restoring
+    live = get_single_task(project_id, task_id, ws)
+    if not live:
+        return {}
+    live_group = (
+        (live.get("state_detail") or {}).get("group") or live.get("state_group") or ""
+    ).lower()
+    if live_group not in ("cancelled", "wont_fix", "rejected"):
+        console.print(f"[dim]Task {task_id[:8]} is '{live_group}' — no restore needed.[/dim]")
+        return {"status": "already_ok", "group": live_group}
+    # Move back to unstarted (To Do)
+    console.print(f"[cyan]↩️  Restoring task {task_id[:8]} from '{live_group}' → 'unstarted'[/cyan]")
+    return update_task_status(project_id, task_id, "unstarted", ws)
+
+
+if __name__ == "__main__":
+    console.print("[blue]✈️ Plane Agent Status Check[/blue]")

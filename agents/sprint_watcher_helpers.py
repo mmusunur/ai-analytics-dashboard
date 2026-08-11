@@ -12,7 +12,7 @@ console = Console(legacy_windows=False)
 def render_sprint_table(tasks: list, poll_count: int, timestamp: str):
     """Render a clean Rich terminal table summarizing current sprint tasks."""
     table = Table(
-        title=f"📋 Sprint Status — {timestamp}",
+        title=f"Sprint Status — {timestamp}",
         title_style="bold magenta",
         header_style="bold cyan",
         border_style="dim"
@@ -29,13 +29,13 @@ def render_sprint_table(tasks: list, poll_count: int, timestamp: str):
 
         # Color coding state
         if state in ("done", "completed"):
-            state_str = f"[green]● {state}[/green]"
+            state_str = f"[green]DONE ({state})[/green]"
         elif state in ("started", "in_progress"):
-            state_str = f"[yellow]⚡ {state}[/yellow]"
+            state_str = f"[yellow]ACTIVE ({state})[/yellow]"
         elif state == "cancelled":
-            state_str = f"[red]✕ {state}[/red]"
+            state_str = f"[red]CANCELLED ({state})[/red]"
         else:
-            state_str = f"[dim]○ {state}[/dim]"
+            state_str = f"[dim]OPEN ({state})[/dim]"
 
         table.add_row(
             prio if prio != "NONE" else "",

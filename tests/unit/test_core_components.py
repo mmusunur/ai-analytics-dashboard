@@ -12,7 +12,7 @@ def test_navbar_component():
     comp_path = ROOT_DIR / "frontend" / "src" / "components" / "Navbar.jsx"
     assert comp_path.exists(), "Navbar.jsx should exist"
     content = comp_path.read_text(encoding="utf-8")
-    assert "AI Analytics Dashboard" in content
+    assert "AgenticOps AI" in content or "AI Analytics Dashboard" in content
 
 
 def test_warehouse_analytics_component():

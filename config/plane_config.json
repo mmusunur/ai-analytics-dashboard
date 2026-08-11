@@ -1,7 +1,8 @@
 {
+  "dynamic_workspace_selection": true,
   "workspace_slug": "agentbuilder",
   "project_name": "AI Analytics Dashboard",
-  "project_id": "6ceb45ad-db0b-42eb-8de1-b4fd05d6593a",
+  "project_id": "all",
   "api_base_url": "https://api.plane.so/api/v1",
   "sprints": [
     {

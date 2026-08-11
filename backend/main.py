@@ -21,8 +21,8 @@ load_dotenv()
 
 # ── App Setup ──────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="AI Analytics Dashboard API",
-    description="Backend API for the Agentic AI Analytics Dashboard",
+    title="AgenticOps AI API",
+    description="Backend API for AgenticOps AI — MCP-Driven Autonomous Enterprise Platform",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc"

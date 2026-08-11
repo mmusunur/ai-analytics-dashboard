@@ -148,17 +148,17 @@ def get_bar_chart(
             batch_id=batch_clean, oeinv=oeinv_clean, only_scratches=only_scratches,
             limit=1000, offset=0
         )
-        whs_totals_map = stats.get("summary", {}).get("warehouse_totals", {})
-        distinct_whs = stats.get("summary", {}).get("distinct_warehouses", [])
-
-        if not distinct_whs and whs_totals_map:
-            distinct_whs = sorted(list(whs_totals_map.keys()))
-
+        whs_totals = stats.get("summary", {}).get("warehouse_totals", [])
         data = []
-        for w in distinct_whs:
-            w_totals = whs_totals_map.get(w, {}) or {}
-            val = w_totals.get("cases_built", 0)
-            data.append({"label": f"Whse {w}", "value": val, "whs_num": str(w)})
+        if isinstance(whs_totals, list):
+            for w_entry in whs_totals:
+                w_num = w_entry.get("whs_num", "")
+                val = w_entry.get("cases_built", 0)
+                data.append({"label": f"Whse {w_num}", "value": val, "whs_num": str(w_num)})
+        elif isinstance(whs_totals, dict):
+            for w_num, w_entry in whs_totals.items():
+                val = w_entry.get("cases_built", 0) if isinstance(w_entry, dict) else w_entry
+                data.append({"label": f"Whse {w_num}", "value": val, "whs_num": str(w_num)})
 
         return JSONResponse({
             "chart_type": "bar",
@@ -166,7 +166,7 @@ def get_bar_chart(
             "data": data,
             "x_label": "Warehouse",
             "y_label": "Cases Built Qty",
-            "total_warehouses": len(distinct_whs)
+            "total_warehouses": len(data)
         })
 
     df = data_service.get_or_generate()
