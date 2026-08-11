@@ -2,6 +2,9 @@
 
 | Document | What it covers |
 |---|---|
+| [AGENT_PIPELINE_USER_GUIDE.md](AGENT_PIPELINE_USER_GUIDE.md) | User guide — sprint pipeline, Agent Monitor, Sprint Monitor |
+| [AgenticOps_AI_Overview.pptx](AgenticOps_AI_Overview.pptx) | Platform overview deck (auto-generated) |
+| [AgenticOps_AI_Documentation.docx](AgenticOps_AI_Documentation.docx) | Full platform documentation in Word (auto-generated) |
 | [agents.md](agents.md) | All 7 agent modules — what they do, key methods, usage |
 | [mcp_servers.md](mcp_servers.md) | All 4 MCP servers — tools, config, agent usage |
 | [backend.md](backend.md) | FastAPI backend — routes, services, schemas |
@@ -30,3 +33,4 @@
 - **Adding a task & watching it build:** [agents.md](agents.md#1-sprint_watcher_agentpy-)
 - **API endpoints reference:** [backend.md](backend.md)
 - **Adding a new MCP tool:** [mcp_servers.md](mcp_servers.md#adding-a-new-mcp-server)
+- **Regenerate PPTX + DOCX:** `python docs/sync_all_documentation.py` (source: `doc_content.py`)

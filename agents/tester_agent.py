@@ -20,14 +20,48 @@ def _run_command(cmd: list[str], cwd: Path = ROOT_DIR) -> tuple[str, str, int]:
     return result.stdout, result.stderr, result.returncode
 
 
-def update_excel_matrix():
-    """Automatically run tests/generate_test_excel.py to sync TEST_CASES.xlsx matrix on disk."""
+def update_excel_matrix(
+    unit_passed: bool = True,
+    browser_passed: bool = True,
+    task_id: str | None = None,
+):
+    """Run tests/generate_test_excel.py to sync TEST_CASES.xlsx (static + sprint dynamic cases)."""
     try:
-        cmd = [sys.executable, str(ROOT_DIR / "tests" / "generate_test_excel.py")]
+        cmd = [
+            sys.executable,
+            str(ROOT_DIR / "tests" / "generate_test_excel.py"),
+            "--unit-passed", str(unit_passed).lower(),
+            "--browser-passed", str(browser_passed).lower(),
+        ]
+        if task_id:
+            cmd.extend(["--task-id", task_id])
         subprocess.run(cmd, cwd=str(ROOT_DIR), capture_output=True, text=True, timeout=120)
-        console.print("[bold green][EXCEL] TEST_CASES.xlsx updated automatically on disk.[/bold green]")
+        console.print("[bold green][EXCEL] TEST_CASES.xlsx updated (static + sprint task cases).[/bold green]")
     except Exception as e:
         console.print(f"[yellow][EXCEL WARNING] Could not update Excel matrix: {e}[/yellow]")
+
+
+def register_sprint_task_tests(
+    task_id: str,
+    task_title: str,
+    description: str = "",
+    project_name: str = "",
+) -> int:
+    """Dynamically generate browser test cases from sprint task and persist to registry."""
+    sys.path.insert(0, str(ROOT_DIR / "tests"))
+    try:
+        from sprint_task_test_generator import register_sprint_task
+        cases = register_sprint_task(task_id, task_title, description, project_name)
+        console.print(
+            f"[bold cyan][SPRINT-TESTS] Registered {len(cases)} dynamic browser test case(s) "
+            f"for task: {task_title}[/bold cyan]"
+        )
+        for c in cases:
+            console.print(f"  • {c['case_id']}: {c['name']}")
+        return len(cases)
+    except Exception as e:
+        console.print(f"[yellow][SPRINT-TESTS WARNING] Could not register sprint test cases: {e}[/yellow]")
+        return 0
 
 
 def run_unit_tests() -> dict:
@@ -71,10 +105,30 @@ def run_unit_tests() -> dict:
 
 
 def run_browser_tests() -> dict:
-    """Run Playwright browser tests."""
+    """Run Playwright browser tests (requires frontend :5173 and backend :8000)."""
     console.print("\n[bold cyan][BROWSER-TESTS] Running Playwright Browser Tests...[/bold cyan]")
     REPORTS_DIR.mkdir(exist_ok=True)
     report_path = REPORTS_DIR / "browser_test_report.html"
+
+    # Mandatory: application must be running before browser tests
+    sys.path.insert(0, str(ROOT_DIR / "scripts"))
+    try:
+        from server_health import ensure_servers_running, servers_healthy
+        if not servers_healthy()["healthy"]:
+            console.print("[yellow][BROWSER-TESTS] Servers not up — auto-starting backend & frontend...[/yellow]")
+        if not ensure_servers_running(wait_seconds=25):
+            return {
+                "type": "browser",
+                "passed": 0,
+                "failed": 1,
+                "total": 1,
+                "success": False,
+                "output": "Browser tests skipped: frontend (:5173) or backend (:8000) not reachable.",
+                "report": str(report_path),
+                "timestamp": datetime.now().isoformat(),
+            }
+    except Exception as e:
+        console.print(f"[yellow][BROWSER-TESTS] Server health check warning: {e}[/yellow]")
 
     _run_command(["python", "-m", "playwright", "install", "chromium", "--with-deps"])
 
@@ -110,13 +164,24 @@ def run_browser_tests() -> dict:
     return result
 
 
-def run_all_tests() -> dict:
-    """Run both unit and browser tests, update TEST_CASES.xlsx, and return combined results."""
+def run_all_tests(
+    task_id: str | None = None,
+    task_title: str | None = None,
+    description: str | None = None,
+    project_name: str | None = None,
+) -> dict:
+    """Run unit + browser tests (including dynamic sprint task cases), update TEST_CASES.xlsx."""
     update_agent_status("tester", "running", "Full test suite")
+
+    if task_id and task_title:
+        register_sprint_task_tests(
+            task_id, task_title, description or task_title, project_name or ""
+        )
 
     console.print(Panel.fit(
         "[bold]Tester Agent — Full Test Suite & Auto Excel Sync[/bold]\n"
-        f"[dim]{datetime.now().strftime('%Y-%m-%d %H:%M')}[/dim]",
+        f"[dim]{datetime.now().strftime('%Y-%m-%d %H:%M')}[/dim]"
+        + (f"\n[cyan]Sprint Task: {task_title}[/cyan]" if task_title else ""),
         border_style="cyan"
     ))
 
@@ -129,15 +194,21 @@ def run_all_tests() -> dict:
         "total_passed": unit_results["passed"] + browser_results["passed"],
         "total_failed": unit_results["failed"] + browser_results["failed"],
         "all_passed": unit_results["success"] and browser_results["success"],
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "task_id": task_id,
+        "task_title": task_title,
     }
 
-    # Automatically update TEST_CASES.xlsx matrix on disk ONLY when both unit and browser tests pass cleanly
+    # Always update Excel with static + dynamic sprint cases and last run results
+    update_excel_matrix(
+        unit_passed=unit_results["success"],
+        browser_passed=browser_results["success"],
+        task_id=task_id,
+    )
     if combined["all_passed"]:
-        update_excel_matrix()
-        console.print("[bold green][EXCEL] TEST_CASES.xlsx matrix updated after Unit + Browser tests PASSED 100%.[/bold green]")
+        console.print("[bold green][EXCEL] TEST_CASES.xlsx updated after full suite PASS.[/bold green]")
     else:
-        console.print("[bold red][EXCEL BLOCKED] Skipping TEST_CASES.xlsx matrix update — Unit or Browser test suite failed.[/bold red]")
+        console.print("[bold yellow][EXCEL] TEST_CASES.xlsx updated with FAIL results for review.[/bold yellow]")
 
     # Update state with test results
     state = load_state()
@@ -183,5 +254,20 @@ def run_all_tests() -> dict:
 
 
 if __name__ == "__main__":
-    results = run_all_tests()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Tester Agent — full quality gate")
+    parser.add_argument("--task-id", default=None)
+    parser.add_argument("--task-title", default=None)
+    parser.add_argument("--description", default=None)
+    parser.add_argument("--project-name", default=None)
+    args = parser.parse_args()
+
+    results = run_all_tests(
+        task_id=args.task_id,
+        task_title=args.task_title,
+        description=args.description,
+        project_name=args.project_name,
+    )
     print(json.dumps(results, indent=2))
+    sys.exit(0 if results.get("all_passed") else 1)

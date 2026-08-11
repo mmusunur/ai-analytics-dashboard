@@ -87,6 +87,15 @@ def apply_intent_fixes(root_dir: Path, codebase_map: dict, task_title: str, desc
         "CHARTS_AND_VISUALIZATION_ALIGNMENT":  ["charts_py", "dashboard"],
         "NAVBAR_AND_SIDEBAR_NAVIGATION":       ["navbar", "dashboard"],
         "MULTI_TARGET_DATABASE_ARCHITECTURE":  ["warehouse_svc", "analytics_py"],
+        "SPRINT_AGENT_FIX":                    ["dashboard"],
+        "SPRINT_BOARD_STYLING_AND_DROPDOWNS":  ["dashboard"],
+        "UI_PERFORMANCE_AND_REFRESH":          ["dashboard"],
+        "ROUTE_AND_NAVIGATION_FIX":            ["navbar", "dashboard"],
+        "BACKEND_QUERY_FIX":                   ["warehouse_svc", "analytics_py"],
+        "API_ENDPOINT_FIX":                    ["analytics_py", "charts_py"],
+        "HIDE_UI_CONTENT":                     ["dashboard", "navbar"],
+        "REMOVE_UNWANTED_CONTENT":             ["dashboard", "navbar"],
+        "TEST_COVERAGE_AND_EXCEL":             ["dashboard"],
     }
 
     files_to_patch = []

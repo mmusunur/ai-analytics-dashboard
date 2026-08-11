@@ -1,0 +1,653 @@
+{
+  "tasks": {
+    "plane-demo-001": {
+      "task_id": "plane-demo-001",
+      "task_title": "Remove Unwanted Content",
+      "description": "Hide Copilot Search Fixes and Agent Monitor from dashboard",
+      "project_name": "",
+      "registered_at": "2026-08-11T16:42:13.358049",
+      "cases": [
+        {
+          "case_id": "TC-TASK-PLANE-DE-SMOKE",
+          "task_id": "plane-demo-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "",
+          "name": "Dashboard smoke after sprint task: Remove Unwanted Content",
+          "functionality": "Sprint Task Regression Smoke Test",
+          "expected": "After implementing the sprint task 'Remove Unwanted Content', the main dashboard loads with KPI cards and global header controls working.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            ".kpi-card",
+            "#global-date-picker",
+            "#global-db-selector",
+            "#submit-db-btn"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-PLANE-DE-HIDE-UI",
+          "task_id": "plane-demo-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "",
+          "name": "Unwanted dashboard widgets remain hidden",
+          "functionality": "Remove Unwanted Content Task Verification",
+          "expected": "The dashboard will not show Copilot Search Fixes, Warehouse Level Statistics, or Agent Task Activity Tracker widgets.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            ".kpi-card",
+            "#global-db-selector"
+          ],
+          "must_be_hidden_text": [
+            "Copilot Search Fixes",
+            "Warehouse Level Statistics",
+            "Agent Task Activity Tracker"
+          ],
+          "must_contain_text": [],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-PLANE-DE-COPILOT",
+          "task_id": "plane-demo-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "",
+          "name": "AI Data Copilot accepts prompts and shows results",
+          "functionality": "AI Data Copilot Sprint Task Verification",
+          "expected": "The AI Data Copilot search box and Ask AI control are visible and a quick insight pill triggers an analysis result card.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "#copilot-input",
+            "button:has-text('Ask AI')",
+            "text=Quick Insights:"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [
+            "AI Copilot Finding"
+          ],
+          "actions": [
+            {
+              "type": "click",
+              "selector": "button:has-text('High Scratch Quantity')"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-PLANE-DE-TABLE",
+          "task_id": "plane-demo-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "",
+          "name": "Warehouse sales table loads with data rows",
+          "functionality": "Warehouse Analytics Table Verification",
+          "expected": "Selecting the development database and submitting loads the warehouse item table with visible rows.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "table",
+            "#warehouse-analytics-table"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": [
+            {
+              "type": "select",
+              "selector": "#global-db-selector",
+              "value": "pg_dev"
+            },
+            {
+              "type": "click",
+              "selector": "#submit-db-btn"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-PLANE-DE-HEADER",
+          "task_id": "plane-demo-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "",
+          "name": "Global header controls and clear filter work",
+          "functionality": "Header Controls Sprint Task Verification",
+          "expected": "Global date picker, database selector, submit button, and clear filter control are visible on the dashboard.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "#global-date-picker",
+            "#global-db-selector",
+            "#submit-db-btn",
+            "#header-clear-filter-btn"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": [
+            {
+              "type": "click",
+              "selector": "button:has-text('High Scratch Quantity')"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-PLANE-DE-AGENTS",
+          "task_id": "plane-demo-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "",
+          "name": "Agent status telemetry visible in sidebar",
+          "functionality": "Agent Fleet Monitoring Verification",
+          "expected": "The dashboard sidebar shows agent status information for the autonomous agent fleet.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            ".sidebar",
+            "text=AGENT STATUS"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-PLANE-DE-UPTIME",
+          "task_id": "plane-demo-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "",
+          "name": "Application servers respond for browser testing",
+          "functionality": "Application Uptime Verification",
+          "expected": "The dashboard and sprint board pages load in the browser confirming frontend and backend services are running.",
+          "url": "http://localhost:5173/sprints",
+          "must_be_visible": [
+            "select#sprint-board-workspace-select"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        }
+      ]
+    },
+    "test-task-id-001": {
+      "task_id": "test-task-id-001",
+      "task_title": "Remove Unwanted Content",
+      "description": "Hide Copilot Search Fixes and Agent Monitor from dashboard",
+      "project_name": "AI Analytics Dashboard",
+      "registered_at": "2026-08-11T16:46:47.873883",
+      "cases": [
+        {
+          "case_id": "TC-TASK-TEST-TAS-SMOKE",
+          "task_id": "test-task-id-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "AI Analytics Dashboard",
+          "name": "Dashboard smoke after sprint task: Remove Unwanted Content",
+          "functionality": "Sprint Task Regression Smoke Test",
+          "expected": "After implementing the sprint task 'Remove Unwanted Content', the main dashboard loads with KPI cards and global header controls working.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            ".kpi-card",
+            "#global-date-picker",
+            "#global-db-selector",
+            "#submit-db-btn"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-HIDE-UI",
+          "task_id": "test-task-id-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "AI Analytics Dashboard",
+          "name": "Unwanted dashboard widgets remain hidden",
+          "functionality": "Remove Unwanted Content Task Verification",
+          "expected": "The dashboard will not show Copilot Search Fixes, Warehouse Level Statistics, or Agent Task Activity Tracker widgets.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            ".kpi-card",
+            "#global-db-selector"
+          ],
+          "must_be_hidden_text": [
+            "Copilot Search Fixes",
+            "Warehouse Level Statistics",
+            "Agent Task Activity Tracker"
+          ],
+          "must_contain_text": [],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-COPILOT",
+          "task_id": "test-task-id-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "AI Analytics Dashboard",
+          "name": "AI Data Copilot accepts prompts and shows results",
+          "functionality": "AI Data Copilot Sprint Task Verification",
+          "expected": "The AI Data Copilot search box and Ask AI control are visible and a quick insight pill triggers an analysis result card.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "#copilot-input",
+            "button:has-text('Ask AI')",
+            "text=Quick Insights:"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [
+            "AI Copilot Finding"
+          ],
+          "actions": [
+            {
+              "type": "click",
+              "selector": "button:has-text('High Scratch Quantity')"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-TABLE",
+          "task_id": "test-task-id-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "AI Analytics Dashboard",
+          "name": "Warehouse sales table loads with data rows",
+          "functionality": "Warehouse Analytics Table Verification",
+          "expected": "Selecting the development database and submitting loads the warehouse item table with visible rows.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "table",
+            "#warehouse-analytics-table"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": [
+            {
+              "type": "select",
+              "selector": "#global-db-selector",
+              "value": "pg_dev"
+            },
+            {
+              "type": "click",
+              "selector": "#submit-db-btn"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-HEADER",
+          "task_id": "test-task-id-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "AI Analytics Dashboard",
+          "name": "Global header controls and clear filter work",
+          "functionality": "Header Controls Sprint Task Verification",
+          "expected": "Global date picker, database selector, submit button, and clear filter control are visible on the dashboard.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "#global-date-picker",
+            "#global-db-selector",
+            "#submit-db-btn",
+            "#header-clear-filter-btn"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": [
+            {
+              "type": "click",
+              "selector": "button:has-text('High Scratch Quantity')"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-AGENTS",
+          "task_id": "test-task-id-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "AI Analytics Dashboard",
+          "name": "Agent status telemetry visible in sidebar",
+          "functionality": "Agent Fleet Monitoring Verification",
+          "expected": "The dashboard sidebar shows agent status information for the autonomous agent fleet.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            ".sidebar",
+            "text=AGENT STATUS"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-UPTIME",
+          "task_id": "test-task-id-001",
+          "task_title": "Remove Unwanted Content",
+          "project_name": "AI Analytics Dashboard",
+          "name": "Application servers respond for browser testing",
+          "functionality": "Application Uptime Verification",
+          "expected": "The dashboard and sprint board pages load in the browser confirming frontend and backend services are running.",
+          "url": "http://localhost:5173/sprints",
+          "must_be_visible": [
+            "select#sprint-board-workspace-select"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        }
+      ]
+    },
+    "test-task-excel-002": {
+      "task_id": "test-task-excel-002",
+      "task_title": "Sprint Board Navigation",
+      "description": "Verify kanban columns",
+      "project_name": "",
+      "registered_at": "2026-08-11T16:46:47.893281",
+      "cases": [
+        {
+          "case_id": "TC-TASK-TEST-TAS-SMOKE",
+          "task_id": "test-task-excel-002",
+          "task_title": "Sprint Board Navigation",
+          "project_name": "",
+          "name": "Dashboard smoke after sprint task: Sprint Board Navigation",
+          "functionality": "Sprint Task Regression Smoke Test",
+          "expected": "After implementing the sprint task 'Sprint Board Navigation', the main dashboard loads with KPI cards and global header controls working.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            ".kpi-card",
+            "#global-date-picker",
+            "#global-db-selector",
+            "#submit-db-btn"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-SPRINT-UI",
+          "task_id": "test-task-excel-002",
+          "task_title": "Sprint Board Navigation",
+          "project_name": "",
+          "name": "Sprint board page loads with workspace and project selectors",
+          "functionality": "Sprint Board Browser Verification",
+          "expected": "The Sprint Board page displays workspace and project dropdowns and kanban column headers.",
+          "url": "http://localhost:5173/sprints",
+          "must_be_visible": [
+            "select#sprint-board-workspace-select",
+            "select#sprint-board-project-select",
+            "h1"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [
+            "Backlog",
+            "To Do"
+          ],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-COPILOT",
+          "task_id": "test-task-excel-002",
+          "task_title": "Sprint Board Navigation",
+          "project_name": "",
+          "name": "AI Data Copilot accepts prompts and shows results",
+          "functionality": "AI Data Copilot Sprint Task Verification",
+          "expected": "The AI Data Copilot search box and Ask AI control are visible and a quick insight pill triggers an analysis result card.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "#copilot-input",
+            "button:has-text('Ask AI')",
+            "text=Quick Insights:"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [
+            "AI Copilot Finding"
+          ],
+          "actions": [
+            {
+              "type": "click",
+              "selector": "button:has-text('High Scratch Quantity')"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-TABLE",
+          "task_id": "test-task-excel-002",
+          "task_title": "Sprint Board Navigation",
+          "project_name": "",
+          "name": "Warehouse sales table loads with data rows",
+          "functionality": "Warehouse Analytics Table Verification",
+          "expected": "Selecting the development database and submitting loads the warehouse item table with visible rows.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "table",
+            "#warehouse-analytics-table"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": [
+            {
+              "type": "select",
+              "selector": "#global-db-selector",
+              "value": "pg_dev"
+            },
+            {
+              "type": "click",
+              "selector": "#submit-db-btn"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-HEADER",
+          "task_id": "test-task-excel-002",
+          "task_title": "Sprint Board Navigation",
+          "project_name": "",
+          "name": "Global header controls and clear filter work",
+          "functionality": "Header Controls Sprint Task Verification",
+          "expected": "Global date picker, database selector, submit button, and clear filter control are visible on the dashboard.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "#global-date-picker",
+            "#global-db-selector",
+            "#submit-db-btn",
+            "#header-clear-filter-btn"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": [
+            {
+              "type": "click",
+              "selector": "button:has-text('High Scratch Quantity')"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-AGENTS",
+          "task_id": "test-task-excel-002",
+          "task_title": "Sprint Board Navigation",
+          "project_name": "",
+          "name": "Agent status telemetry visible in sidebar",
+          "functionality": "Agent Fleet Monitoring Verification",
+          "expected": "The dashboard sidebar shows agent status information for the autonomous agent fleet.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            ".sidebar",
+            "text=AGENT STATUS"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-UPTIME",
+          "task_id": "test-task-excel-002",
+          "task_title": "Sprint Board Navigation",
+          "project_name": "",
+          "name": "Application servers respond for browser testing",
+          "functionality": "Application Uptime Verification",
+          "expected": "The dashboard and sprint board pages load in the browser confirming frontend and backend services are running.",
+          "url": "http://localhost:5173/sprints",
+          "must_be_visible": [
+            "select#sprint-board-workspace-select"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        }
+      ]
+    },
+    "test-task-sprint-003": {
+      "task_id": "test-task-sprint-003",
+      "task_title": "Sprint Board Browser Navigation",
+      "description": "Workspace dropdown and kanban",
+      "project_name": "",
+      "registered_at": "2026-08-11T16:46:47.910540",
+      "cases": [
+        {
+          "case_id": "TC-TASK-TEST-TAS-SMOKE",
+          "task_id": "test-task-sprint-003",
+          "task_title": "Sprint Board Browser Navigation",
+          "project_name": "",
+          "name": "Dashboard smoke after sprint task: Sprint Board Browser Navigation",
+          "functionality": "Sprint Task Regression Smoke Test",
+          "expected": "After implementing the sprint task 'Sprint Board Browser Navigation', the main dashboard loads with KPI cards and global header controls working.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            ".kpi-card",
+            "#global-date-picker",
+            "#global-db-selector",
+            "#submit-db-btn"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-SPRINT-UI",
+          "task_id": "test-task-sprint-003",
+          "task_title": "Sprint Board Browser Navigation",
+          "project_name": "",
+          "name": "Sprint board page loads with workspace and project selectors",
+          "functionality": "Sprint Board Browser Verification",
+          "expected": "The Sprint Board page displays workspace and project dropdowns and kanban column headers.",
+          "url": "http://localhost:5173/sprints",
+          "must_be_visible": [
+            "select#sprint-board-workspace-select",
+            "select#sprint-board-project-select",
+            "h1"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [
+            "Backlog",
+            "To Do"
+          ],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-COPILOT",
+          "task_id": "test-task-sprint-003",
+          "task_title": "Sprint Board Browser Navigation",
+          "project_name": "",
+          "name": "AI Data Copilot accepts prompts and shows results",
+          "functionality": "AI Data Copilot Sprint Task Verification",
+          "expected": "The AI Data Copilot search box and Ask AI control are visible and a quick insight pill triggers an analysis result card.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "#copilot-input",
+            "button:has-text('Ask AI')",
+            "text=Quick Insights:"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [
+            "AI Copilot Finding"
+          ],
+          "actions": [
+            {
+              "type": "click",
+              "selector": "button:has-text('High Scratch Quantity')"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-TABLE",
+          "task_id": "test-task-sprint-003",
+          "task_title": "Sprint Board Browser Navigation",
+          "project_name": "",
+          "name": "Warehouse sales table loads with data rows",
+          "functionality": "Warehouse Analytics Table Verification",
+          "expected": "Selecting the development database and submitting loads the warehouse item table with visible rows.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "table",
+            "#warehouse-analytics-table"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": [
+            {
+              "type": "select",
+              "selector": "#global-db-selector",
+              "value": "pg_dev"
+            },
+            {
+              "type": "click",
+              "selector": "#submit-db-btn"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-HEADER",
+          "task_id": "test-task-sprint-003",
+          "task_title": "Sprint Board Browser Navigation",
+          "project_name": "",
+          "name": "Global header controls and clear filter work",
+          "functionality": "Header Controls Sprint Task Verification",
+          "expected": "Global date picker, database selector, submit button, and clear filter control are visible on the dashboard.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "#global-date-picker",
+            "#global-db-selector",
+            "#submit-db-btn",
+            "#header-clear-filter-btn"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": [
+            {
+              "type": "click",
+              "selector": "button:has-text('High Scratch Quantity')"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-AGENTS",
+          "task_id": "test-task-sprint-003",
+          "task_title": "Sprint Board Browser Navigation",
+          "project_name": "",
+          "name": "Agent status telemetry visible in sidebar",
+          "functionality": "Agent Fleet Monitoring Verification",
+          "expected": "The dashboard sidebar shows agent status information for the autonomous agent fleet.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            ".sidebar",
+            "text=AGENT STATUS"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-TEST-TAS-UPTIME",
+          "task_id": "test-task-sprint-003",
+          "task_title": "Sprint Board Browser Navigation",
+          "project_name": "",
+          "name": "Application servers respond for browser testing",
+          "functionality": "Application Uptime Verification",
+          "expected": "The dashboard and sprint board pages load in the browser confirming frontend and backend services are running.",
+          "url": "http://localhost:5173/sprints",
+          "must_be_visible": [
+            "select#sprint-board-workspace-select"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        }
+      ]
+    }
+  },
+  "active_task_id": "test-task-sprint-003",
+  "history": [
+    "test-task-sprint-003",
+    "test-task-excel-002",
+    "test-task-id-001",
+    "plane-demo-001"
+  ],
+  "last_case_results": {
+    "TC-TASK-PLANE-DE-SMOKE": "PASS",
+    "TC-TASK-PLANE-DE-HIDE-UI": "PASS",
+    "TC-TASK-PLANE-DE-COPILOT": "PASS",
+    "TC-TASK-PLANE-DE-TABLE": "PASS",
+    "TC-TASK-PLANE-DE-HEADER": "PASS",
+    "TC-TASK-PLANE-DE-AGENTS": "PASS",
+    "TC-TASK-PLANE-DE-UPTIME": "PASS"
+  },
+  "last_results_at": "2026-08-11T16:44:15.660754"
+}

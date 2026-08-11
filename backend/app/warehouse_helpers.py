@@ -46,6 +46,8 @@ def compute_warehouse_summary(items: list) -> dict:
     distinct_whse = len(set(it.get("whs_num") for it in items if it.get("whs_num")))
     distinct_invo = len(set(it.get("oeinvo") for it in items if it.get("oeinvo")))
 
+    fulfillment_rate = f"{(total_cases / total_order * 100):.1f}%" if total_order > 0 else "0%"
+
     return {
         "total_cases_built": total_cases,
         "total_original_order_qty": total_order,
@@ -54,10 +56,13 @@ def compute_warehouse_summary(items: list) -> dict:
         "distinct_warehouses": distinct_whse,
         "distinct_invoices": distinct_invo,
         "total_invoices_processed": distinct_invo,
+        "procurement_fulfillment_rate": fulfillment_rate,
         "warehouse_totals": [
             {
                 "whs_num": whs,
+                "warehouse": f"WHS {whs}",
                 "cases_built": sum(it.get("cases_bld_stg", 0) for it in items if it.get("whs_num") == whs),
+                "scratch_qty": sum(it.get("whs_scrtch_qty_stg", 0) for it in items if it.get("whs_num") == whs),
                 "original_order_qty": sum(it.get("orgnl_ordr_qty_stg", 0) for it in items if it.get("whs_num") == whs)
             }
             for whs in sorted(set(it.get("whs_num") for it in items if it.get("whs_num")))

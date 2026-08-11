@@ -472,6 +472,10 @@ body {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
 /* ── Pulse Animation ─────────────────────────────────────────────────────────── */
 .pulse {
   animation: pulse 2s ease-in-out infinite;

@@ -9,7 +9,7 @@ This task specification governs the **Full Automated Testing Suite** (Pytest Uni
 
 ### 1. Unit Test Suite (`tests/unit/`)
 - **Execution Command:** `python -m pytest tests/unit/ -v --tb=short`
-- **Total Test Cases:** 51 Unit Tests
+- **Total Test Cases:** 65 Unit Tests
 - **Key Modules Tested:**
   - `test_analytics.py` — ML models, AI Copilot, Anomaly alerts
   - `test_charts.py` — KPI cards, Bar chart, Scatter plot, Heatmaps
@@ -18,9 +18,12 @@ This task specification governs the **Full Automated Testing Suite** (Pytest Uni
   - `test_task19_20_copilot_date_rules.py` — Date-agnostic Copilot & Date-strict Dashboard rules
   - `test_warehouse_db_filters.py` — PostgreSQL parameters & schema integrity
 
+  - `test_sprints.py` — Sprint board API, agent status, pickup group rules, watcher behavior
+
 ### 2. Playwright Browser E2E Suite (`tests/browser/`)
 - **Execution Command:** `python -m pytest tests/browser/ -v --tb=short`
-- **Total Test Cases:** 14 Interactive Browser Tests
+- **Total Test Cases:** 39 Interactive Browser Tests
+- **Prerequisite:** Application servers must be running (`:8000` + `:5173`). Auto-started by `tester_agent.py` via `scripts/server_health.py`.
 - **Key Flow Validations:**
   - Default date auto-application on page load (`#global-date-picker`)
   - KPI card real number rendering

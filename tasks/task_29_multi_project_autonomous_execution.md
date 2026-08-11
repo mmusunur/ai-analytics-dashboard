@@ -22,10 +22,11 @@ This task specification enforces **Multi-Project Workspace Scanning** for worksp
 ## 🔄 2. Multi-Project Scanning Policy
 
 - **Workspace-Wide Aggregation:** `SprintWatcherAgent` and FastAPI backend router (`/api/sprints/tasks`) automatically query `list_projects("agentbuilder")` and scan open work items across **ALL 3 projects** simultaneously.
-- **Actionable States Filtered:**
-  - 📥 **Backlog** (`unstarted`, `backlog`)
+- **Actionable States for Agent Pickup (new tasks):**
   - 📝 **To Do** (`todo`, `to_do`, `triaged`)
-  - ⚡ **In Progress** (`started`, `in_progress`, `active`)
+  - 📥 **Unstarted** (`unstarted`)
+- **Excluded from automatic pickup:** Backlog (`backlog`), Completed, Cancelled
+- **Retry:** Stale **In Progress** (`started`, `in_progress`, `active`) tasks may be retried when prior implementation was interrupted
 
 ---
 
@@ -50,7 +51,7 @@ This task specification enforces **Multi-Project Workspace Scanning** for worksp
 ### Mandatory Execution Steps:
 1. **Pickup & In-Progress State:** Mark task as `in_progress` in the specific target project where the issue resides.
 2. **Real Code Modifications (`builder_agent.py`):** Analyze task title and description requirements, locate affected source files, and apply real code patches (FastAPI router endpoints, React frontend components, styling, or service layers).
-3. **Quality Gate Testing (`tester_agent.py`):** Execute pytest unit test suite (`pytest tests/unit/`) and Playwright browser E2E suite (`pytest tests/browser/`).
+3. **Quality Gate Testing (`tester_agent.py`):** Execute pytest unit test suite (`pytest tests/unit/` — **65 tests**) and Playwright browser E2E suite (`pytest tests/browser/` — **39 tests**). Servers on `:8000` and `:5173` MUST be running; auto-started via `scripts/server_health.py`.
 4. **Conditional Task Completion:**
    - **If Tests PASS:** Update task status to `completed` on Plane REST API and append test execution log comment.
    - **If Tests FAIL:** Keep task open, mark as `failed` / `cancelled`, and log failure output so Builder Agent can attempt fixes.

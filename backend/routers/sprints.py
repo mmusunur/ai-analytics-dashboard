@@ -324,7 +324,7 @@ def get_sprint_tasks(workspace_slug: Optional[str] = Query(None), project_id: Op
         # These mirror AGENT_PICKUP_GROUPS in sprint_watcher_agent.py exactly.
         # "started"   = In Progress (human or agent action) — NEVER trigger watcher for these
         # "cancelled" = closed/rejected by human — NEVER trigger watcher
-        TRIGGER_GROUPS = {"unstarted", "todo", "triaged", "backlog"}
+        TRIGGER_GROUPS = {"unstarted", "todo", "triaged"}
         pickup_tasks = [
             task for task in all_raw_tasks
             if (task.get("state_group") or "").lower() in TRIGGER_GROUPS

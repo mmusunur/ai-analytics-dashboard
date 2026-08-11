@@ -1,13 +1,10 @@
-import CopilotSearchFixes from '../components/CopilotSearchFixes';
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import axios from 'axios'
 import KPICard from '../components/KPICard'
 import WarehouseSalesAnalytics from '../components/WarehouseSalesAnalytics'
-import WarehouseAnalytics from '../components/WarehouseAnalytics'
 import AiDataCopilot from '../components/AiDataCopilot'
 import AnomalyAlertPanel from '../components/AnomalyAlertPanel'
-import AgentTaskActivityTracker from '../components/AgentTaskActivityTracker'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ScatterChart, Scatter, Cell
@@ -372,7 +369,7 @@ export default function Dashboard() {
         onClearFilter={() => {
           setCopilotFilterActive(false)
           setTableFilters(null)
-          fetchAll(appliedDate, appliedTargetDb, '', false)
+          fetchAll(appliedDate, appliedTargetDb, {}, false)
         }}
         copilotFilterActive={copilotFilterActive}
       />
@@ -452,7 +449,6 @@ export default function Dashboard() {
       </div>
 
       {/* ── Autonomous Agent Task Pickup & Execution Stream ── */}
-      <AgentTaskActivityTracker />
 
       {/* ── Warehouse Sales & Invoice Analytics — receives global date, db & external filters ── */}
       <WarehouseSalesAnalytics
@@ -463,8 +459,6 @@ export default function Dashboard() {
       />
 
       {/* ── Warehouse Inventory Level Statistics ── */}
-      <WarehouseAnalytics />
-      <CopilotSearchFixes />
     </motion.div>
   )
 }

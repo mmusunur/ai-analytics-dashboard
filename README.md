@@ -13,8 +13,11 @@
 - ⚡ **Non-Blocking Background Sprint Watcher** — Polling `/api/sprints/tasks` automatically triggers `SprintWatcherAgent` in a daemon background thread.
 - 🧠 **Daily Memory Persistence Engine** — Automatically updates `memory/conversations/assistant_conversation.jsonl`, `memory/task_history/YYYY-MM-DD_task_history.jsonl`, and `memory/agent_state.json` on every user conversation exchange.
 - 📋 **Modular Task Index (`tasks.md` & `tasks/`)** — Master task specifications split into focused `.md` files under `tasks/` (e.g. `tasks/task_28_memory_and_daily_task_updates.md`, `tasks/task_7_git_automation.md`).
-- 🛡️ **Auto-Restart Watchdog Engine** — Continuously monitors servers (`:8000`, `:5173`) and agents, automatically restarting them if downtime is detected.
-- 📊 **Automated Excel Test Matrix** — Running `python tests/generate_test_excel.py` generates color-coded execution results in [`tests/TEST_CASES.xlsx`](tests/TEST_CASES.xlsx).
+- 🛡️ **Auto-Restart Watchdog Engine** — [`scripts/agent_watchdog.py`](scripts/agent_watchdog.py) monitors `:8000`, `:5173`, and the sprint watcher; auto-restarts crashed services via [`scripts/server_health.py`](scripts/server_health.py).
+- 🔧 **Rule-Based Builder Fallback** — [`agents/builder_rules.py`](agents/builder_rules.py) applies deterministic code fixes when LLM output is unavailable, alongside [`agents/builder_agent.py`](agents/builder_agent.py).
+- 🧭 **Live Agent & Sprint Status UI** — Sidebar links to `/agents` (Agent Monitor) and `/sprints` (Sprint Board); floating pipeline panel shows active task, phase, and which agent is working (Builder, Tester, etc.).
+- 📊 **Automated Excel Test Matrix** — Running `python tests/generate_test_excel.py` generates color-coded execution results in [`tests/TEST_CASES.xlsx`](tests/TEST_CASES.xlsx). Sprint tasks dynamically add browser test rows via [`tests/sprint_task_test_generator.py`](tests/sprint_task_test_generator.py) (no user interaction).
+- 📖 **Agent Pipeline User Guide** — [`docs/AGENT_PIPELINE_USER_GUIDE.md`](docs/AGENT_PIPELINE_USER_GUIDE.md) (sprint auto-pickup, live status UI, documentation auto-update rules).
 
 ---
 
@@ -44,13 +47,15 @@ ai_analytics_dashboard/
 ├── tests/           # pytest unit tests + Playwright browser tests + generate_test_excel.py
 ├── memory/          # Persistent agent memory (conversations/, task_history/, agent_state.json, nlp_taxonomy.json)
 ├── mcp_servers/     # MCP server configurations (plane, github, memory, browser)
-├── scripts/         # start_all_services.bat, start_all_services.sh, agent_watchdog.py, end_of_day.py
+├── scripts/         # start_all_services.bat/.sh, agent_watchdog.py, server_health.py, end_of_day.py
 └── reports/         # Auto-generated test reports
 ```
 
 ---
 
 ## 🚀 1-Click Launchers & Continuous Operations
+
+> **Agent directive:** Start the application once and keep it running. Do not run browser tests or close Plane tasks while `:8000` or `:5173` are down. Use the watchdog or `ensure_servers_running()` to recover automatically.
 
 ### 1-Click Launch (Zero Approval Prompts)
 * **Windows Launcher:** `scripts\start_all_services.bat`
@@ -64,8 +69,11 @@ python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 # 2. Vite Frontend Dev Server (Port 5173)
 cd frontend && npm run dev -- --host 0.0.0.0
 
-# 3. Agent & Server Watchdog Supervisor
+# 3. Agent & Server Health Watchdog Supervisor (auto-restarts :8000, :5173, sprint watcher)
 python scripts/agent_watchdog.py
+
+# 3b. Ensure servers are up (used internally by tester & sprint watcher)
+python -c "from scripts.server_health import ensure_servers_running; print(ensure_servers_running())"
 
 # 4. Sprint Watcher Continuous Agent Loop (15s)
 python scripts/run_sprint_watcher.py --interval 15
@@ -123,3 +131,5 @@ memory/
 ---
 
 *Built with ❤️ by AI agents — managed by Antigravity*
+
+- **Automatic Documentation Sync:** [`docs/doc_content.py`](docs/doc_content.py) is the single source for PPTX + DOCX. Run `python docs/sync_all_documentation.py` to **replace in place** [`docs/AgenticOps_AI_Overview.pptx`](docs/AgenticOps_AI_Overview.pptx) and [`docs/AgenticOps_AI_Documentation.docx`](docs/AgenticOps_AI_Documentation.docx) — one file each, no duplicates.
