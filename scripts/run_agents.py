@@ -46,7 +46,7 @@ def main():
     # Import and run orchestrator
     from orchestrator_agent import OrchestratorAgent
     agent = OrchestratorAgent()
-    agent.run_daily_session()
+    agent.supervise_fleet(poll_interval=30)
 
 
 if __name__ == "__main__":

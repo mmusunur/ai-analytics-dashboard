@@ -53,6 +53,7 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 - 📄 [`tasks/task_30_agent_monitoring_watchdog.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_30_agent_monitoring_watchdog.md) — Real-Time Agent Monitoring & Watchdog Supervisor
 - 📄 [`tasks/task_32_application_uptime_and_sprint_pipeline.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_32_application_uptime_and_sprint_pipeline.md) — Application Must Stay Running + Sprint Pipeline Quality Gates
 - 📄 [`tasks/task_33_automatic_documentation_updates.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_33_automatic_documentation_updates.md) — Auto-Update README, tasks/, docs/, PPTX + DOCX on Major Changes (`python docs/sync_all_documentation.py`)
+- 📄 [`tasks/task_34_sprint_close_on_test_pass.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_34_sprint_close_on_test_pass.md) — Close Plane Sprint Task When Quality Gate Tests Pass (never leave Completed work stuck In Progress)
 
 ---
 

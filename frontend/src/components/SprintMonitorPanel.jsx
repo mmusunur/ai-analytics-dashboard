@@ -12,6 +12,7 @@ export default function SprintMonitorPanel({
   inProgressCount,
   todoCount,
   watcherActive,
+  queuePending = 0,
 }) {
   return (
     <div id="sprint-monitor-panel" style={{ marginBottom: '20px' }}>
@@ -43,6 +44,7 @@ export default function SprintMonitorPanel({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '14px' }}>
         <MiniStat label="In Progress" value={inProgressCount} color="#c4b5fd" highlight={inProgressCount > 0} />
         <MiniStat label="To Do (ready)" value={todoCount} color="#60a5fa" />
+        <MiniStat label="Queued" value={queuePending ?? 0} color="#38bdf8" />
         <MiniStat label="Pipeline" value={pipeline?.phase || 'idle'} color="#a78bfa" />
         <MiniStat
           label="Active agent"

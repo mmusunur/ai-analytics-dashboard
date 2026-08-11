@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   CheckCircle2, Clock, PlayCircle, RefreshCw,
@@ -10,6 +10,7 @@ import { useAgentWorking } from '../context/AgentWorkingContext'
 import { useLivePoll } from '../hooks/useLivePoll'
 import MonitorRefreshBar from '../components/MonitorRefreshBar'
 import SprintMonitorPanel from '../components/SprintMonitorPanel'
+import TaskQueuePanel from '../components/TaskQueuePanel'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -91,20 +92,40 @@ export default function SprintBoard() {
     refresh: refreshTasks,
     secondsUntilRefresh: tasksCountdown,
     paused: tasksPaused,
+    softPaused: tasksSoftPaused,
   } = useLivePoll(fetchSprintTasksApi, {
     intervalMs: 12000,
     pause: agentWorking,
+    pauseIntervalMs: 20000,
     enabled: true,
     deps: [selectedWorkspace, selectedProject],
   })
 
   const { data: fleetData } = useLivePoll(fetchFleetApi, {
     intervalMs: 4000,
-    pause: agentWorking,
+    pause: false,
     enabled: true,
   })
 
   const pipeline = fleetData?.pipeline || {}
+  const taskQueue = fleetData?.task_queue || {}
+
+  const queueMap = useMemo(() => {
+    const m = {}
+    if (taskQueue?.active?.id) {
+      m[taskQueue.active.id] = { ...taskQueue.active, queue_status: 'active' }
+    }
+    for (const t of taskQueue?.pending || []) {
+      m[t.id] = { ...t, queue_status: 'pending', progress_pct: 0, phase: 'queued' }
+    }
+    for (const t of taskQueue?.completed || []) {
+      m[t.id] = { ...t, queue_status: 'completed', progress_pct: 100, phase: 'done' }
+    }
+    for (const t of taskQueue?.failed || []) {
+      m[t.id] = { ...t, queue_status: 'failed', phase: 'failed' }
+    }
+    return m
+  }, [taskQueue])
   const watcherActive = (fleetData?.agents?.sprint_watcher?.status || 'running') === 'running'
   const loading = tasksInitialLoad && !sprintData
   const error = tasksError
@@ -264,10 +285,12 @@ export default function SprintBoard() {
         lastUpdated={tasksLastUpdated}
         isRefreshing={tasksRefreshing || loading}
         paused={tasksPaused}
+        softPaused={tasksSoftPaused}
+        agentWorking={agentWorking}
         secondsUntilRefresh={tasksCountdown}
         error={error}
         onRefresh={refreshTasks}
-        intervalLabel="12s"
+        intervalLabel={tasksSoftPaused ? '20s slow' : '12s'}
       />
 
       <SprintMonitorPanel
@@ -277,7 +300,10 @@ export default function SprintBoard() {
         inProgressCount={inProgressTasks.length}
         todoCount={todoTasks.length}
         watcherActive={watcherActive}
+        queuePending={taskQueue?.pending?.length || 0}
       />
+
+      <TaskQueuePanel taskQueue={taskQueue} pipeline={pipeline} />
 
       <div style={{
         background: 'linear-gradient(135deg, rgba(124,58,237,0.12) 0%, rgba(6,182,212,0.12) 100%)',
@@ -566,7 +592,7 @@ export default function SprintBoard() {
                 No backlog tasks
               </div>
             ) : (
-              filteredBacklog.map(task => <TaskCard key={task.id} task={task} colors={priorityColors} />)
+              filteredBacklog.map(task => <TaskCard key={task.id} task={task} colors={priorityColors} queueInfo={queueMap[task.id]} />)
             )}
           </div>
         </div>
@@ -587,7 +613,7 @@ export default function SprintBoard() {
                 No tasks in To Do
               </div>
             ) : (
-              filteredTodo.map(task => <TaskCard key={task.id} task={task} colors={priorityColors} />)
+              filteredTodo.map(task => <TaskCard key={task.id} task={task} colors={priorityColors} queueInfo={queueMap[task.id]} />)
             )}
           </div>
         </div>
@@ -608,7 +634,7 @@ export default function SprintBoard() {
                 No active in-progress tasks
               </div>
             ) : (
-              filteredInProgress.map(task => <TaskCard key={task.id} task={task} colors={priorityColors} isProgress />)
+              filteredInProgress.map(task => <TaskCard key={task.id} task={task} colors={priorityColors} isProgress queueInfo={queueMap[task.id]} />)
             )}
           </div>
         </div>
@@ -629,7 +655,7 @@ export default function SprintBoard() {
                 No completed tasks yet
               </div>
             ) : (
-              filteredCompleted.map(task => <TaskCard key={task.id} task={task} colors={priorityColors} isDone />)
+              filteredCompleted.map(task => <TaskCard key={task.id} task={task} colors={priorityColors} isDone queueInfo={queueMap[task.id]} />)
             )}
           </div>
         </div>
@@ -638,19 +664,48 @@ export default function SprintBoard() {
   )
 }
 
-function TaskCard({ task, colors, isProgress, isDone }) {
+function TaskCard({ task, colors, isProgress, isDone, queueInfo }) {
   const pStyle = colors[(task.priority || 'medium').toLowerCase()] || colors.medium
+  const qStatus = queueInfo?.queue_status
+  const progress = queueInfo?.progress_pct ?? 0
+  const phaseLabel = queueInfo?.phase?.replace(/_/g, ' ')
+
+  const statusColors = {
+    active: { bg: 'rgba(124,58,237,0.2)', text: '#c4b5fd', label: `⚡ ${phaseLabel || 'working'}` },
+    pending: { bg: 'rgba(96,165,250,0.15)', text: '#93c5fd', label: '⏳ Queued' },
+    completed: { bg: 'rgba(16,185,129,0.15)', text: '#34d399', label: '✓ Agent done' },
+    failed: { bg: 'rgba(239,68,68,0.15)', text: '#f87171', label: '↩ Returned to To Do' },
+  }
+  const sc = statusColors[qStatus]
+
   return (
     <div style={{
       background: 'var(--bg-secondary)',
-      border: isProgress ? '1px solid rgba(124,58,237,0.5)' : '1px solid var(--border-color)',
+      border: isProgress || qStatus === 'active' ? '1px solid rgba(124,58,237,0.5)' : '1px solid var(--border-color)',
       borderRadius: '8px', padding: '12px 14px', transition: 'all 0.2s ease'
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
         <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', lineHeight: '1.4' }}>
-          {isDone ? '✅ ' : isProgress ? '⚡ ' : ''}{task.name}
+          {isDone ? '✅ ' : isProgress || qStatus === 'active' ? '⚡ ' : ''}{task.name}
         </div>
+        {sc && (
+          <span style={{
+            fontSize: '9px', fontWeight: 800, padding: '3px 8px', borderRadius: '10px',
+            background: sc.bg, color: sc.text, whiteSpace: 'nowrap', flexShrink: 0,
+          }}>
+            {sc.label}
+          </span>
+        )}
       </div>
+
+      {qStatus === 'active' && progress > 0 && (
+        <div style={{ marginBottom: '8px' }}>
+          <div style={{ height: '4px', background: 'rgba(255,255,255,0.08)', borderRadius: '2px', overflow: 'hidden' }}>
+            <div style={{ width: `${progress}%`, height: '100%', background: '#7c3aed', transition: 'width 0.3s' }} />
+          </div>
+          <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px', textAlign: 'right' }}>{progress}%</div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px', flexWrap: 'wrap', gap: '6px' }}>
         <span style={{ fontSize: '10px', color: '#93c5fd', fontWeight: 700, background: 'rgba(147,197,253,0.1)', padding: '2px 6px', borderRadius: '4px' }}>

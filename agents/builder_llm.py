@@ -8,6 +8,8 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 
+from agent_config_loader import get_agent_model, get_agent_max_tokens
+
 console = Console(legacy_windows=False)
 
 
@@ -57,8 +59,8 @@ Return ONLY the complete modified file content (no markdown fences, no explanati
 If no changes needed, return exactly: UNCHANGED"""
 
         resp = client.messages.create(
-            model="claude-opus-4-5",
-            max_tokens=4096,
+            model=get_agent_model("builder"),
+            max_tokens=min(get_agent_max_tokens("builder"), 4096),
             messages=[{"role": "user", "content": prompt}]
         )
         result = resp.content[0].text.strip()

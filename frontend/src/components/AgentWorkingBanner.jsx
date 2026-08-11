@@ -84,7 +84,7 @@ export default function AgentWorkingBanner({ agentWorking, taskName, since }) {
                 fontSize: '13px', fontWeight: 800, color: '#fff',
                 letterSpacing: '0.3px'
               }}>
-                🔒 Agent is modifying code — UI polling paused
+                🔒 Agent is working on a sprint task
               </span>
               {taskName && (
                 <span style={{
@@ -108,9 +108,9 @@ export default function AgentWorkingBanner({ agentWorking, taskName, since }) {
             </span>
             <span style={{
               fontSize: '11px', color: 'rgba(255,255,255,0.6)',
-              maxWidth: '280px', lineHeight: '1.4'
+              maxWidth: '320px', lineHeight: '1.4'
             }}>
-              Filters &amp; data will resume automatically when agent finishes
+              Agent Monitor &amp; pipeline stay live · Sprint board syncs on slow interval
             </span>
           </div>
 

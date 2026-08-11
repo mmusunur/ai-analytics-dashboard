@@ -6,9 +6,11 @@ import Dashboard from './pages/Dashboard'
 import Analytics from './pages/Analytics'
 import SprintBoard from './pages/SprintBoard'
 import AgentMonitor from './pages/AgentMonitor'
+import McpExplorer from './pages/McpExplorer'
 import Footer from './components/Footer'
 import AgentWorkingBanner from './components/AgentWorkingBanner'
 import AgentPipelineStatus from './components/AgentPipelineStatus'
+import QuickNavBar from './components/QuickNavBar'
 import { AgentWorkingProvider, useAgentWorking } from './context/AgentWorkingContext'
 import { Menu } from 'lucide-react'
 import './index.css'
@@ -43,7 +45,7 @@ function AppShell() {
   const [sidebarHidden, setSidebarHidden] = useState(false)
   const { agentWorking, agentWorkingTask, agentWorkingSince } = useAgentWorking()
 
-  const hideFloatingPipeline = location.pathname === '/agents' || location.pathname === '/sprints'
+  const hideFloatingPipeline = ['/agents', '/sprints', '/mcp'].includes(location.pathname)
 
   return (
     <div className="app-layout">
@@ -82,20 +84,22 @@ function AppShell() {
       <main
         className="main-content"
         style={{
-          marginLeft: sidebarHidden ? '0' : (sidebarCollapsed ? '72px' : '260px'),
-          maxWidth: sidebarHidden ? '100vw' : (sidebarCollapsed ? 'calc(100vw - 72px)' : 'calc(100vw - 260px)'),
+          marginLeft: sidebarHidden ? '0' : (sidebarCollapsed ? '72px' : '272px'),
+          maxWidth: sidebarHidden ? '100vw' : (sidebarCollapsed ? 'calc(100vw - 72px)' : 'calc(100vw - 272px)'),
           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           display: 'flex', flexDirection: 'column', minHeight: '100vh',
           padding: sidebarHidden ? '32px 32px 32px 64px' : '32px',
           paddingTop: agentWorking ? '56px' : '32px',
         }}
       >
+        <QuickNavBar />
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/charts" element={<Placeholder title="Charts Explorer" emoji="📈" />} />
           <Route path="/data" element={<Placeholder title="Data Manager" emoji="🗄️" />} />
           <Route path="/agents" element={<AgentMonitor />} />
+          <Route path="/mcp" element={<McpExplorer />} />
           <Route path="/sprints" element={<SprintBoard />} />
         </Routes>
         <Footer />

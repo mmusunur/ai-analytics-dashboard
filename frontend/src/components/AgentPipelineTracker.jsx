@@ -77,6 +77,22 @@ export default function AgentPipelineTracker({ pipeline, agentWorking, agentWork
         </div>
       )}
 
+      {isActive && (pipeline?.progress_pct > 0) && (
+        <div style={{ marginBottom: '14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#64748b', marginBottom: '4px' }}>
+            <span>Progress</span>
+            <span>{pipeline.progress_pct}%</span>
+          </div>
+          <div style={{ height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden' }}>
+            <div style={{
+              width: `${pipeline.progress_pct}%`, height: '100%',
+              background: phase === 'failed' ? '#ef4444' : 'linear-gradient(90deg, #7c3aed, #34d399)',
+              transition: 'width 0.4s ease',
+            }} />
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '8px' }}>
         {PHASES.map((p, i) => {
           let bg = 'rgba(255,255,255,0.04)'

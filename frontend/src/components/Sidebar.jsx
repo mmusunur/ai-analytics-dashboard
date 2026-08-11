@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import {
   LayoutDashboard, BarChart3, LineChart, Bot,
-  Database, ChevronRight, Menu, EyeOff, Kanban
+  Database, ChevronRight, Menu, EyeOff, Kanban, Plug
 } from 'lucide-react'
 
 const navItems = [
@@ -13,6 +13,7 @@ const navItems = [
   { path: '/data', label: 'Data Manager', icon: Database, section: 'DATA' },
   { path: '/sprints', label: 'Sprint Board', icon: Kanban, section: 'AGENTS' },
   { path: '/agents', label: 'Agent Monitor', icon: Bot, section: 'AGENTS' },
+  { path: '/mcp', label: 'MCP Explorer', icon: Plug, section: 'AGENTS' },
 ]
 
 const AGENT_LABELS = {
@@ -25,23 +26,41 @@ const AGENT_LABELS = {
   memory: 'Memory',
 }
 
+const DEFAULT_AGENTS = [
+  'sprint_watcher', 'builder', 'tester', 'git_agent', 'memory', 'orchestrator',
+].map((key) => [key, { status: 'idle', current_task: 'Loading…' }])
+
+const API = import.meta.env.VITE_API_URL || ''
+
 export default function Sidebar({ collapsed, onToggle, onHide }) {
   const location = useLocation()
   const [agentsData, setAgentsData] = useState({})
   const [pipeline, setPipeline] = useState({ phase: 'idle' })
+  const [agentsError, setAgentsError] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
+
     const fetchStatus = () => {
-      axios.get('/api/agents/status')
+      axios.get(`${API}/api/agents/status`, { timeout: 8000 })
         .then(res => {
-          if (res.data?.agents) setAgentsData(res.data.agents)
+          if (cancelled) return
+          if (res.data?.agents) {
+            setAgentsData(res.data.agents)
+            setAgentsError(false)
+          }
           if (res.data?.pipeline) setPipeline(res.data.pipeline)
         })
-        .catch(() => {})
+        .catch(() => {
+          if (!cancelled) setAgentsError(true)
+        })
     }
     fetchStatus()
     const timer = setInterval(fetchStatus, 4000)
-    return () => clearInterval(timer)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
   }, [])
 
   const sections = [...new Set(navItems.map(n => n.section))]
@@ -55,12 +74,16 @@ export default function Sidebar({ collapsed, onToggle, onHide }) {
 
   const pipelineActive = pipeline.phase && !['idle', 'done'].includes(pipeline.phase)
 
+  const agentEntries = Object.keys(agentsData).length > 0
+    ? Object.entries(agentsData)
+    : DEFAULT_AGENTS
+
   return (
     <aside
       className={`sidebar ${collapsed ? 'collapsed' : ''}`}
       style={{
-        width: collapsed ? '72px' : '260px',
-        minWidth: collapsed ? '72px' : '260px',
+        width: collapsed ? '72px' : '272px',
+        minWidth: collapsed ? '72px' : '272px',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         overflowX: 'hidden'
       }}
@@ -122,9 +145,9 @@ export default function Sidebar({ collapsed, onToggle, onHide }) {
               onClick={onHide}
               title="Hide sidebar"
               style={{
-                background: 'rgba(239, 68, 68, 0.12)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                color: '#ef4444', padding: '6px', borderRadius: '6px', cursor: 'pointer',
+                background: 'rgba(148, 163, 184, 0.12)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-secondary)', padding: '6px', borderRadius: '6px', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 height: '40px', width: '32px'
               }}
@@ -166,12 +189,17 @@ export default function Sidebar({ collapsed, onToggle, onHide }) {
       </nav>
 
       {!collapsed && (
-        <div style={{
+        <div className="sidebar-agent-panel" style={{
           padding: '14px 8px',
           borderTop: '1px solid var(--border-subtle)',
-          marginTop: 'auto'
         }}>
           <div className="nav-section-label" style={{ paddingTop: 0, marginBottom: '6px' }}>AGENT STATUS</div>
+
+          {agentsError && (
+            <div style={{ fontSize: '10px', color: '#fbbf24', marginBottom: '6px' }}>
+              Backend unreachable — showing last known / default agents
+            </div>
+          )}
 
           {pipelineActive && pipeline.task_title && (
             <div style={{
@@ -189,7 +217,7 @@ export default function Sidebar({ collapsed, onToggle, onHide }) {
             </div>
           )}
 
-          {Object.entries(agentsData).map(([name, info]) => {
+          {agentEntries.map(([name, info]) => {
             const working = isAgentRunning(name, info) || (pipeline.active_agent === name && pipelineActive)
             const label = AGENT_LABELS[name] || name.replace('_', ' ')
             const taskDesc = info?.current_task || 'Idle'

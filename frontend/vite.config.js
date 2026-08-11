@@ -13,6 +13,7 @@ export default defineConfig({
     }
   },
   define: {
-    'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'http://localhost:8000')
+    // Empty = use Vite dev proxy (/api → :8000). Set VITE_API_URL for direct backend URL.
+    'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || '')
   }
 })

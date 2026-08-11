@@ -23,8 +23,12 @@ load_dotenv(ROOT_DIR / ".env")
 console = Console(force_terminal=True)
 
 from plane_agent import get_or_create_project, list_projects, list_tasks, get_single_task, update_task_status, add_comment
-from memory_manager import update_agent_status, set_agent_working, log_task_result, load_state, save_state, set_pipeline_status
-from sprint_watcher_helpers import render_sprint_table
+from memory_manager import (
+    update_agent_status, set_agent_working, log_task_result, load_state, save_state,
+    set_pipeline_status, sync_pending_tasks, set_queue_active,
+    complete_queue_task, fail_queue_task,
+)
+from sprint_watcher_helpers import render_sprint_table, IN_PROGRESS_GROUPS, quality_gate_action
 
 STATE_TODO    = "unstarted"   # Plane group: unstarted (To Do)
 STATE_INPROG  = "started"    # Plane group: started  (In Progress)
@@ -110,6 +114,8 @@ class SprintWatcherAgent:
         self.state = load_state()
         # Task deduplication: persisted across instances to prevent re-pickup of already-handled tasks.
         self._processed_task_ids: set = _load_processed_ids()
+        self._verify_close_attempts: dict[str, float] = {}
+        self.verify_close_cooldown = int(os.getenv("SPRINT_VERIFY_CLOSE_COOLDOWN", "120"))
 
     def _init_project(self) -> bool:
         self.workspace_slug = self.state.get("plane_workspace_slug") or "agentbuilder"
@@ -235,42 +241,72 @@ class SprintWatcherAgent:
         except Exception as e:
             console.print(f"[yellow]⚠️ Git commit error: {e}[/yellow]")
 
+    def _reconcile_processed_ids(self, tasks: List[Dict], _get_group) -> None:
+        """Drop processed IDs when Plane shows task is still To Do (incomplete run) or sync completed."""
+        changed = False
+        for tid in list(self._processed_task_ids):
+            task = next((t for t in tasks if t.get("id") == tid), None)
+            if not task:
+                continue
+            grp = _get_group(task)
+            if grp in {"completed", "done"}:
+                complete_queue_task(tid, task.get("name", "Task"))
+                continue
+            if grp in AGENT_PICKUP_GROUPS:
+                self._processed_task_ids.discard(tid)
+                changed = True
+                console.print(f"[dim]↻ Task {tid[:8]} back in To Do — removed from processed (will re-pick)[/dim]")
+        if changed:
+            _save_processed_ids(self._processed_task_ids)
+
     def _finalize_task(self, project_id: str, task_id: str, task_title: str, success: bool, output: str, duration: float, builder_ran: bool = True):
         """
-        Finalize task state in Plane:
-        - Builder made real changes AND tests PASS  → STATE_DONE (completed)
-        - Builder made NO code changes              → leave In Progress, add comment for manual review
-        - Tests FAIL after builder ran              → move back to STATE_TODO (unstarted/To Do)
-                                                      NOT cancelled — cancelled is a human-only action
+        Finalize task state in Plane (Task 34 quality gate):
+        - Tests PASS → STATE_DONE (completed), even if builder made no new changes (verify-only close)
+        - Tests FAIL + builder made changes → STATE_TODO (retry)
+        - Tests FAIL + no builder changes → leave In Progress for manual review
         """
         target_pid = project_id or self.project_id
+        action = quality_gate_action(success, builder_ran)
         try:
-            if not builder_ran:
-                # Builder found no actionable code changes — leave In Progress, flag for manual review
+            if action == "leave_in_progress":
                 add_comment(
                     target_pid, task_id,
-                    f"🤖 Sprint Watcher: Builder found no actionable code changes for this task ({duration}s).\n"
-                    f"Task left In Progress — manual developer review required.\nTask: {task_title}",
+                    f"🤖 Sprint Watcher: Quality gate not met ({duration}s).\n"
+                    f"Tests did not pass and no code changes were applied.\n"
+                    f"Task left In Progress — manual review required.\nTask: {task_title}",
                     self.workspace_slug
                 )
-                console.print(f"[yellow]⚠️ Task left In Progress (no code changes made): {task_title}[/yellow]")
-            elif success:
+                console.print(f"[yellow]⚠️ Task left In Progress (tests failed, no code changes): {task_title}[/yellow]")
+            elif action == "complete":
+                close_note = (
+                    "Implementation COMPLETE ✅"
+                    if builder_ran
+                    else "Verify-only close: requirements already satisfied — all sprint tests PASSED ✅"
+                )
                 set_pipeline_status("closing", task_id, task_title, "plane_agent", "Marking task completed on Plane")
-                # Tests PASSED — mark as Done in Plane
-                update_task_status(target_pid, task_id, STATE_DONE, self.workspace_slug)
-                add_comment(
-                    target_pid, task_id,
-                    f"🤖 Sprint Watcher: Implementation COMPLETE ✅ ({duration}s). Tests PASSED.\n{output[:300]}",
-                    self.workspace_slug
-                )
-                console.print(f"[green]✅ Task marked Done: {task_title}[/green]")
+                result = update_task_status(target_pid, task_id, STATE_DONE, self.workspace_slug)
+                if result:
+                    add_comment(
+                        target_pid, task_id,
+                        f"🤖 Sprint Watcher: {close_note} ({duration}s). Tests PASSED.\n{output[:300]}",
+                        self.workspace_slug
+                    )
+                    console.print(f"[green]✅ Task marked Done on Plane: {task_title}[/green]")
+                else:
+                    console.print(f"[yellow]⚠️ Tests passed but Plane close failed — will retry close next cycle[/yellow]")
+                    self._processed_task_ids.discard(task_id)
+                    _save_processed_ids(self._processed_task_ids)
+                    fail_queue_task(task_id, task_title, "Tests passed but Plane status update failed")
+                    return
                 set_pipeline_status("git_push", task_id, task_title, "git_agent", "Committing and pushing changes")
-                self._run_git_commit(task_id, task_title)
+                if builder_ran:
+                    self._run_git_commit(task_id, task_title)
                 set_pipeline_status("done", task_id, task_title, "", f"Task completed successfully in {duration}s")
+                complete_queue_task(task_id, task_title, duration)
             else:
                 set_pipeline_status("failed", task_id, task_title, "tester", "Tests failed — task returned to To Do")
-                # Tests FAILED — move back to To Do (NOT cancelled)
-                # Remove from processed set so it can be retried after developer review
+                fail_queue_task(task_id, task_title, output[:200] or "Tests failed")
                 self._processed_task_ids.discard(task_id)
                 update_task_status(target_pid, task_id, STATE_TODO, self.workspace_slug)
                 add_comment(
@@ -286,8 +322,7 @@ class SprintWatcherAgent:
         log_task_result(task_id, task_title, "SprintWatcherAgent", "completed" if success else "failed", output, duration)
         update_agent_status("sprint_watcher", "idle", "Sprint Watcher Agent Active (Monitoring)")
 
-        # Allow retry on next cycle if pipeline did not fully succeed
-        if not success or not builder_ran:
+        if action != "complete":
             self._processed_task_ids.discard(task_id)
             _save_processed_ids(self._processed_task_ids)
 
@@ -385,6 +420,7 @@ class SprintWatcherAgent:
 
         # Step 1: Move task to In Progress in Plane
         set_pipeline_status("pickup", task_id, task_title, "sprint_watcher", "Task picked up from Plane sprint board")
+        set_queue_active(task_id, task_title, task.get("project_name", ""), priority)
         # Previously, tasks were added to processed IDs BEFORE this step,
         # meaning a failed status update would permanently blacklist the task for 24h.
         status_updated = False
@@ -406,7 +442,6 @@ class SprintWatcherAgent:
         # Mark as processed only now that we've successfully claimed the task in Plane
         self._processed_task_ids.add(task_id)
         _save_processed_ids(self._processed_task_ids)
-
         update_agent_status("sprint_watcher", "running", f"ACTIVE TASK: [{task_id[:8]}] {task_title}")
 
         # ── Step 2+3: Build + Test — set agent_working=True so frontend PAUSES polling ──
@@ -423,14 +458,9 @@ class SprintWatcherAgent:
             set_pipeline_status("building", task_id, task_title, "builder", "Builder agent implementing code changes")
             build_success = self._run_builder(task_id, task_title, desc, priority)
 
-            # Step 3: Run tests only if builder succeeded (includes dynamic sprint task browser cases)
-            if build_success:
-                set_pipeline_status("testing", task_id, task_title, "tester", "Running unit + browser + sprint task tests")
-            test_success, test_output = (
-                self._run_tests(task_id, task_title, desc, task.get("project_name", ""))
-                if build_success
-                else (False, "Builder made no code changes or failed")
-            )
+            # Step 3: Always run quality gate tests (Task 34 — test pass closes sprint task)
+            set_pipeline_status("testing", task_id, task_title, "tester", "Running unit + browser + sprint task tests")
+            test_success, test_output = self._run_tests(task_id, task_title, desc, task.get("project_name", ""))
         finally:
             set_agent_working(False)
             console.print(f"[magenta]🔓 Agent working flag CLEARED — frontend polling resumed[/magenta]")
@@ -463,6 +493,7 @@ class SprintWatcherAgent:
 
         self._processed_task_ids.add(task_id)
         _save_processed_ids(self._processed_task_ids)
+        set_queue_active(task_id, task_title, task.get("project_name", ""), priority)
         update_agent_status("sprint_watcher", "running", f"RETRY: [{task_id[:8]}] {task_title}")
 
         start_time = time.time()
@@ -472,17 +503,60 @@ class SprintWatcherAgent:
         try:
             set_agent_working(True, task_title)
             build_success = self._run_builder(task_id, task_title, desc, priority)
-            test_success, test_output = (
-                self._run_tests(task_id, task_title, desc, task.get("project_name", ""))
-                if build_success
-                else (False, "Builder made no code changes or failed")
-            )
+            set_pipeline_status("testing", task_id, task_title, "tester", "Re-running quality gate tests")
+            test_success, test_output = self._run_tests(task_id, task_title, desc, task.get("project_name", ""))
         finally:
             set_agent_working(False)
 
         duration = round(time.time() - start_time, 2)
         self._finalize_task(project_id, task_id, task_title, test_success, test_output, duration, build_success)
         return test_success
+
+    def _verify_close_in_progress_task(self, task: dict) -> bool:
+        """
+        Task 34: For tasks stuck In Progress on Plane, re-run tests and close if quality gate passes.
+        Handles tasks already in processed_ids where Plane close failed or verify-only completion was missed.
+        """
+        task_id = task["id"]
+        now = time.time()
+        last = self._verify_close_attempts.get(task_id, 0)
+        if now - last < self.verify_close_cooldown:
+            return False
+
+        task_title = task.get("name", "Unknown Task")
+        project_id = self._resolve_project_id(task)
+        if not project_id:
+            return False
+
+        self._verify_close_attempts[task_id] = now
+        console.print(Panel(
+            f"[bold cyan]Verify-Close In Progress Task[/bold cyan]\n"
+            f"Title: {task_title}\n"
+            f"Rule: If sprint tests PASS → mark Completed on Plane",
+            border_style="cyan"
+        ))
+
+        start_time = time.time()
+        test_success = False
+        test_output = ""
+        try:
+            set_agent_working(True, task_title)
+            set_pipeline_status("testing", task_id, task_title, "tester", "Verify-close: running sprint quality gate")
+            test_success, test_output = self._run_tests(
+                task_id, task_title, task.get("description", "") or "", task.get("project_name", "")
+            )
+        finally:
+            set_agent_working(False)
+
+        duration = round(time.time() - start_time, 2)
+        if test_success:
+            self._finalize_task(project_id, task_id, task_title, True, test_output, duration, builder_ran=False)
+            self._processed_task_ids.add(task_id)
+            _save_processed_ids(self._processed_task_ids)
+            return True
+
+        console.print(f"[dim]Verify-close: tests not passing yet for '{task_title}' — stays In Progress[/dim]")
+        return False
 
 
     def watch(self, max_cycles: Optional[int] = None):
@@ -536,22 +610,40 @@ class SprintWatcherAgent:
             # Sort so URGENT / HIGH priority items are processed first
             actionable.sort(key=lambda t: priority_weights.get((t.get("priority") or "medium").lower(), 2), reverse=True)
 
+            self._reconcile_processed_ids(tasks, _get_group)
+            sync_pending_tasks(actionable)
+
             for task in actionable:
                 grp = _get_group(task)
                 console.print(f"[cyan]→ Picking up [{grp.upper()}] task: {task.get('name')} (priority: {task.get('priority', 'medium')})[/cyan]")
                 self._handle_new_task(task)
                 time.sleep(1.0)
 
-            # Retry in-progress tasks that were never fully processed by the pipeline
-            stale_in_progress = [
+            # Retry / verify-close in-progress tasks (Task 34)
+            in_progress_tasks = [
                 t for t in tasks
-                if _get_group(t) in {"started", "in_progress"}
-                and t.get("id") not in self._processed_task_ids
+                if _get_group(t) in IN_PROGRESS_GROUPS
             ]
-            for task in stale_in_progress:
+            stale_unprocessed = [
+                t for t in in_progress_tasks
+                if t.get("id") not in self._processed_task_ids
+            ]
+            stuck_processed = [
+                t for t in in_progress_tasks
+                if t.get("id") in self._processed_task_ids
+            ]
+
+            for task in stale_unprocessed:
                 console.print(f"[yellow]→ Retrying stale In-Progress task: {task.get('name')}[/yellow]")
                 self._handle_in_progress_retry(task)
                 time.sleep(1.0)
+
+            for task in stuck_processed:
+                self._verify_close_in_progress_task(task)
+                time.sleep(1.0)
+
+            if not actionable and not in_progress_tasks:
+                set_pipeline_status("idle", "", "", "", f"Monitoring — {len(tasks)} tasks on board, queue ready")
 
             if max_cycles and cycle >= max_cycles:
                 break

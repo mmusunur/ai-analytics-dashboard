@@ -110,19 +110,19 @@ export default function Dashboard() {
     if (invVal) queryParams += `&oeinv=${encodeURIComponent(invVal)}`;
     if (scratchesVal) queryParams += `&only_scratches=true`;
 
-    axios.get(`${API}/api/charts/kpi?${queryParams}`)
+    axios.get(`${API}/api/charts/kpi?${queryParams}`, { timeout: 12000 })
       .then(res => {
         if (res.data?.kpis) setKpis(res.data.kpis)
       })
       .catch(err => console.error('Failed to fetch KPI cards:', err))
 
-    axios.get(`${API}/api/charts/bar?${queryParams}`)
+    axios.get(`${API}/api/charts/bar?${queryParams}`, { timeout: 12000 })
       .then(res => {
         if (res.data?.data) setBarData(res.data.data)
       })
       .catch(err => console.error('Failed to fetch Bar chart data:', err))
 
-    axios.get(`${API}/api/charts/scatter?${queryParams}`)
+    axios.get(`${API}/api/charts/scatter?${queryParams}`, { timeout: 12000 })
       .then(res => {
         if (res.data?.data) setScatterData(res.data.data)
       })
