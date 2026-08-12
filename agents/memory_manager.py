@@ -601,9 +601,6 @@ def update_test_progress(
         pipeline["task_id"] = task_id
     if task_title:
         pipeline["task_title"] = task_title
-    for key in BUILD_DETAIL_KEYS:
-        if key in pipeline:
-            pass  # keep merged build fields during test heartbeats
     state["pipeline"] = pipeline
     save_state(state)
     tid = pipeline.get("task_id") or task_id

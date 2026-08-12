@@ -103,16 +103,21 @@ def handle_task(
             console.print(f"[yellow]↻ Retry build with prior test failure context ({len(failure_ctx)} chars)[/yellow]")
 
     # Step 1: Classify intent (strip retry failure blobs so NLP stays on-task)
-    update_build_progress("classifying", "Classifying task intent (NLP + rules)", task_id, task_title, intents=intents)
+    update_build_progress("classifying", "Classifying task intent (NLP + rules)", task_id, task_title)
     clean_desc = (description or "").split("=== PREVIOUS TEST")[0].strip()
     intent_result = classify_task_intent_and_intent_map(task_title, clean_desc)
     intents = intent_result["intents"]
+    update_build_progress(
+        "classifying",
+        f"Detected intents: {', '.join(intents[:4])}",
+        task_id, task_title, intents=intents,
+    )
     console.print(f"[cyan]Detected intents: {intents}[/cyan]")
     if intent_result.get("target_files"):
         console.print(f"[cyan]LLM target files: {intent_result['target_files']}[/cyan]")
 
     # Step 2: Component-specific helper builds
-    update_build_progress("spec_load", "Loading task spec + target file map", task_id, task_title)
+    update_build_progress("spec_load", "Loading task spec + target file map", task_id, task_title, intents=intents)
     spec_context = _load_task_spec_context(ROOT_DIR, task_title, description)
     if spec_context:
         description = f"{description}\n\nTask spec reference:\n{spec_context[:3000]}"
@@ -155,7 +160,7 @@ def handle_task(
             _snapshot(p)
 
     # Apply LLM code changes to target files
-    update_build_progress("patching", "Applying code patches (LLM + rule-based handlers)", task_id, task_title)
+    update_build_progress("patching", "Applying code patches (LLM + rule-based handlers)", task_id, task_title, intents=intents)
     modified_files = apply_intent_fixes(ROOT_DIR, CODEBASE_MAP, task_title, description, intents)
 
     # Rule-based fallback when LLM makes no changes (no API key or UNCHANGED responses)
@@ -183,6 +188,8 @@ def handle_task(
         task_title,
         files_modified=real_files,
         build_outcome="verify_only" if already_done else "code_changed",
+        intents=intents,
+        already_applied=already_done,
     )
 
     if already_done:
@@ -191,7 +198,7 @@ def handle_task(
         console.print(f"[green]Files modified: {real_files}[/green]")
 
     # Step 4: Verification — run tests AFTER changes
-    update_build_progress("unit_verify", "Running builder unit verification (pytest)", task_id, task_title)
+    update_build_progress("unit_verify", "Running builder unit verification (pytest)", task_id, task_title, intents=intents, already_applied=already_done)
     test_passed = run_builder_test_verification()
 
     if not test_passed and not already_done:
