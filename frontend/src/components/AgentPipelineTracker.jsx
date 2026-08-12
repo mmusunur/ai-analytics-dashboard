@@ -3,8 +3,11 @@
  */
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import axios from 'axios'
 import { Activity } from 'lucide-react'
 import TaskDeliveryNotice from './TaskDeliveryNotice'
+
+const API = import.meta.env.VITE_API_URL || ''
 
 const PHASES = [
   { key: 'pickup', label: '1. Pickup', short: 'Pickup', agent: 'Sprint Watcher' },
@@ -117,9 +120,10 @@ function BuildDetailPanel({ open, onClose, pipeline, taskTitle, isBuilding, buil
           </div>
           <div style={{ fontSize: '13px', color: '#e2e8f0' }}>
             {outcome === 'verify_only' && 'Verify-only — requirements already in codebase'}
-            {outcome === 'code_changed' && `Code changed — ${files.length} file(s)${duration != null ? ` in ${duration}s` : ''}`}
-            {!outcome && isBuilding && 'Waiting for build result…'}
-            {!outcome && !isBuilding && 'No build recorded for this task yet'}
+            {outcome === 'code_changed' && `Code changed — ${files.length} file(s)${duration != null ? ` in ${duration}s` : isBuilding ? ' (in progress)' : ''}`}
+            {!outcome && isBuilding && 'Build running — files & functionality update live below'}
+            {!outcome && !isBuilding && files.length > 0 && `Code changed — ${files.length} file(s)`}
+            {!outcome && !isBuilding && !files.length && 'No build recorded for this task yet'}
           </div>
         </div>
 
@@ -201,19 +205,41 @@ function BuildDetailPanel({ open, onClose, pipeline, taskTitle, isBuilding, buil
 export default function AgentPipelineTracker({ pipeline, agentWorking, agentWorkingTask }) {
   const [, tick] = useState(0)
   const [buildDetailOpen, setBuildDetailOpen] = useState(false)
-  const phase = pipeline?.phase || 'idle'
-  const taskTitle = pipeline?.task_title || agentWorkingTask || ''
-  const activeAgent = pipeline?.active_agent || ''
-  const message = pipeline?.message || ''
-  const testSubphase = pipeline?.test_subphase || ''
-  const testStartedAt = pipeline?.test_started_at || ''
-  const buildSubphase = pipeline?.build_subphase || ''
-  const buildStartedAt = pipeline?.build_started_at || ''
-  const buildOutcome = pipeline?.build_outcome || ''
-  const buildFiles = pipeline?.build_files_modified || []
-  const buildDuration = pipeline?.build_duration_seconds
+  const [detailPipeline, setDetailPipeline] = useState(pipeline)
+
+  useEffect(() => {
+    setDetailPipeline(pipeline)
+  }, [pipeline])
+
+  useEffect(() => {
+    if (!buildDetailOpen) return undefined
+    const fetchDetail = async () => {
+      try {
+        const res = await axios.get(`${API}/api/agents/status`, { timeout: 4000 })
+        if (res.data?.pipeline) setDetailPipeline(res.data.pipeline)
+      } catch {
+        /* keep last snapshot */
+      }
+    }
+    fetchDetail()
+    const id = setInterval(fetchDetail, 2000)
+    return () => clearInterval(id)
+  }, [buildDetailOpen, pipeline?.task_id])
+
+  const activePipeline = buildDetailOpen ? detailPipeline : pipeline
+  const phase = activePipeline?.phase || pipeline?.phase || 'idle'
+  const taskTitle = activePipeline?.task_title || pipeline?.task_title || agentWorkingTask || ''
+  const activeAgent = activePipeline?.active_agent || pipeline?.active_agent || ''
+  const message = activePipeline?.message || pipeline?.message || ''
+  const testSubphase = activePipeline?.test_subphase || pipeline?.test_subphase || ''
+  const testStartedAt = activePipeline?.test_started_at || pipeline?.test_started_at || ''
+  const buildSubphase = activePipeline?.build_subphase || pipeline?.build_subphase || ''
+  const buildStartedAt = activePipeline?.build_started_at || pipeline?.build_started_at || ''
+  const buildOutcome = activePipeline?.build_outcome || pipeline?.build_outcome || ''
+  const buildFiles = activePipeline?.build_files_modified || pipeline?.build_files_modified || []
+  const buildDuration = activePipeline?.build_duration_seconds ?? pipeline?.build_duration_seconds
   const currentIdx = phaseIndex(phase)
-  const completedSteps = new Set(pipeline?.completed_steps || [])
+  const completedSteps = new Set(activePipeline?.completed_steps || pipeline?.completed_steps || [])
   const isActive = !['idle', 'done', 'failed'].includes(phase)
   const isFailed = phase === 'failed'
   const isTesting = phase === 'testing'
@@ -238,10 +264,15 @@ export default function AgentPipelineTracker({ pipeline, agentWorking, agentWork
   }
 
   const hasBuildDetail = Boolean(
-    pipeline?.build_files_modified?.length
+    activePipeline?.build_files_modified?.length
+    || pipeline?.build_files_modified?.length
+    || activePipeline?.build_functionality?.length
     || pipeline?.build_functionality?.length
+    || activePipeline?.build_outcome
     || pipeline?.build_outcome
+    || activePipeline?.build_usage_guide?.headline
     || isBuilding
+    || completedSteps.has('building')
   )
   const buildStepClickable = isStepComplete('building') || isBuilding || hasBuildDetail
 
@@ -250,7 +281,7 @@ export default function AgentPipelineTracker({ pipeline, agentWorking, agentWork
     <BuildDetailPanel
       open={buildDetailOpen}
       onClose={() => setBuildDetailOpen(false)}
-      pipeline={pipeline}
+      pipeline={detailPipeline}
       taskTitle={taskTitle}
       isBuilding={isBuilding}
       buildElapsed={buildElapsed}

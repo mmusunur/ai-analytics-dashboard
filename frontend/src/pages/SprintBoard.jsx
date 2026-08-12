@@ -103,7 +103,7 @@ export default function SprintBoard() {
   })
 
   const { data: fleetData } = useLivePoll(fetchFleetApi, {
-    intervalMs: 4000,
+    intervalMs: 2000,
     pause: false,
     enabled: true,
   })

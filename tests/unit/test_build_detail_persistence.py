@@ -47,6 +47,34 @@ def test_build_detail_persists_into_testing(tmp_path, monkeypatch):
     assert pipeline["build_usage_guide"]["headline"] == "Foo feature"
 
 
+def test_build_snapshot_survives_testing_phase(tmp_path, monkeypatch):
+    state_file = tmp_path / "agent_state.json"
+    monkeypatch.setattr(mm, "STATE_FILE", state_file)
+    monkeypatch.setattr(mm, "MEMORY_DIR", tmp_path)
+    monkeypatch.setattr(mm, "update_queue_progress", lambda *a, **k: None)
+
+    tid = "task-live"
+    mm.save_state({
+        "pipeline": {
+            "phase": "building",
+            "task_id": tid,
+            "task_title": "Live Task",
+            "build_outcome": "code_changed",
+            "build_files_modified": ["Foo.jsx"],
+            "build_functionality": ["Foo added"],
+            "build_intents": ["ADDITIONAL_FEATURES"],
+            "build_usage_guide": {"headline": "Foo", "route": "/"},
+        }
+    })
+    mm._persist_build_snapshot(tid, mm.load_state()["pipeline"])
+    mm.set_pipeline_status("testing", tid, "Live Task", "tester", "Running tests")
+
+    pipeline = mm.get_pipeline_status()
+    assert pipeline["phase"] == "testing"
+    assert pipeline["build_files_modified"] == ["Foo.jsx"]
+    assert pipeline["build_usage_guide"]["headline"] == "Foo"
+
+
 def test_build_detail_cleared_on_new_pickup(tmp_path, monkeypatch):
     state_file = tmp_path / "agent_state.json"
     monkeypatch.setattr(mm, "STATE_FILE", state_file)

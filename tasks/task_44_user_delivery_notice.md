@@ -54,6 +54,7 @@ Copied to `task_queue.completed[].delivery_guide` on task close.
 2. **Unknown intents** — infer route from changed files (`Dashboard.jsx` → `/`, `SprintBoard` → `/sprints`, etc.).
 3. **Verify-only** — guide says “already in codebase — verified”.
 4. **Never skip** delivery guide on `record_build_result()`.
+5. **Live during Build** — `update_build_progress()` writes functionality + usage guide as soon as intents are classified; **per-task snapshot** (`build_snapshots_by_task`) survives Test→Done and idle reset.
 
 ---
 

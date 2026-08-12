@@ -589,6 +589,9 @@ def update_test_progress(
     """Heartbeat during long Test runs — UI shows sub-phase + elapsed time."""
     state = load_state()
     pipeline = dict(state.get("pipeline") or {})
+    tid = task_id or pipeline.get("task_id")
+    if tid:
+        _merge_build_snapshot(pipeline, tid)
     if not pipeline.get("test_started_at"):
         pipeline["test_started_at"] = datetime.now().isoformat()
     pipeline["phase"] = "testing"
