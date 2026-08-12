@@ -101,6 +101,7 @@ BUILD_DETAIL_KEYS = (
     "build_files_modified",
     "build_intents",
     "build_functionality",
+    "build_usage_guide",
     "build_detail_updated_at",
 )
 
