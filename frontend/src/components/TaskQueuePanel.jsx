@@ -3,6 +3,7 @@
  */
 import { useState, useEffect } from 'react'
 import { ListTodo, PlayCircle, CheckCircle2, XCircle } from 'lucide-react'
+import TaskDeliveryNotice from './TaskDeliveryNotice'
 
 const TEST_SUBPHASE_LABELS = {
   starting: 'Preparing',
@@ -150,6 +151,13 @@ export default function TaskQueuePanel({ taskQueue, pipeline }) {
               <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
                 {t.duration_seconds ? `${t.duration_seconds}s` : 'closed on Plane'}
               </div>
+              {t.delivery_guide?.headline ? (
+                <TaskDeliveryNotice guide={t.delivery_guide} compact />
+              ) : (
+                <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px', fontStyle: 'italic' }}>
+                  Click Build step on pipeline for build details (older tasks)
+                </div>
+              )}
               <ProgressBar pct={100} color="#34d399" />
             </div>
           )}

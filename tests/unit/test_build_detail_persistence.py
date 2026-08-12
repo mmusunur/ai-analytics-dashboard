@@ -27,6 +27,7 @@ def test_build_detail_persists_into_testing(tmp_path, monkeypatch):
             "build_files_modified": ["frontend/src/components/Foo.jsx"],
             "build_functionality": ["Foo panel added"],
             "build_intents": ["FOO_INTENT"],
+            "build_usage_guide": {"headline": "Foo feature", "route": "/", "steps": ["Open Dashboard"]},
             "build_duration_seconds": 12.5,
             "completed_steps": ["pickup", "building"],
         }
@@ -43,6 +44,7 @@ def test_build_detail_persists_into_testing(tmp_path, monkeypatch):
     assert pipeline["build_functionality"] == ["Foo panel added"]
     assert pipeline["build_intents"] == ["FOO_INTENT"]
     assert pipeline["build_duration_seconds"] == 12.5
+    assert pipeline["build_usage_guide"]["headline"]
 
 
 def test_build_detail_cleared_on_new_pickup(tmp_path, monkeypatch):

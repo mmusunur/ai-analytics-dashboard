@@ -11,6 +11,7 @@ import { useLivePoll } from '../hooks/useLivePoll'
 import MonitorRefreshBar from '../components/MonitorRefreshBar'
 import SprintMonitorPanel from '../components/SprintMonitorPanel'
 import TaskQueuePanel from '../components/TaskQueuePanel'
+import TaskDeliveryNotice from '../components/TaskDeliveryNotice'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -109,6 +110,22 @@ export default function SprintBoard() {
 
   const pipeline = fleetData?.pipeline || {}
   const taskQueue = fleetData?.task_queue || {}
+  const [dismissedDeliveryId, setDismissedDeliveryId] = useState(null)
+
+  const latestDelivery = useMemo(() => {
+    if (pipeline?.build_usage_guide?.headline && pipeline?.task_id) {
+      return {
+        guide: pipeline.build_usage_guide,
+        taskTitle: pipeline.task_title,
+        id: pipeline.task_id,
+      }
+    }
+    const recent = (taskQueue?.completed || []).find((t) => t.delivery_guide?.headline)
+    if (recent) {
+      return { guide: recent.delivery_guide, taskTitle: recent.title, id: recent.id }
+    }
+    return null
+  }, [pipeline, taskQueue])
 
   const queueMap = useMemo(() => {
     const m = {}
@@ -323,6 +340,14 @@ export default function SprintBoard() {
         watcherActive={watcherActive}
         queuePending={taskQueue?.pending?.length || 0}
       />
+
+      {latestDelivery && latestDelivery.id !== dismissedDeliveryId && (
+        <TaskDeliveryNotice
+          guide={latestDelivery.guide}
+          taskTitle={latestDelivery.taskTitle}
+          onDismiss={() => setDismissedDeliveryId(latestDelivery.id)}
+        />
+      )}
 
       <TaskQueuePanel taskQueue={taskQueue} pipeline={pipeline} />
 
