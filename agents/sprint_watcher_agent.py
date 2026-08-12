@@ -555,11 +555,17 @@ class SprintWatcherAgent:
                     else "Verify-only close: requirements already satisfied — all sprint tests PASSED ✅"
                 )
                 set_pipeline_status("closing", task_id, task_title, "plane_agent", "Marking task completed on Plane")
+                from memory_manager import get_pipeline_status, format_delivery_comment
+                delivery = (get_pipeline_status().get("build_usage_guide") or {})
+                delivery_text = format_delivery_comment(delivery)
                 result = update_task_status(target_pid, task_id, STATE_DONE, self.workspace_slug)
                 if result:
+                    comment_body = f"🤖 Sprint Watcher: {close_note} ({duration}s). Tests PASSED.\n{output[:300]}"
+                    if delivery_text:
+                        comment_body += f"\n\n{delivery_text}"
                     add_comment(
                         target_pid, task_id,
-                        f"🤖 Sprint Watcher: {close_note} ({duration}s). Tests PASSED.\n{output[:300]}",
+                        comment_body,
                         self.workspace_slug
                     )
                     console.print(f"[green]✅ Task marked Done on Plane: {task_title}[/green]")

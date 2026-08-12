@@ -155,7 +155,7 @@ def set_pipeline_status(
     if phase == "idle" and not task_id:
         for key in ("build_outcome", "build_duration_seconds", "build_files_modified",
                     "build_started_at", "build_subphase", "build_intents", "build_functionality",
-                    "build_detail_updated_at"):
+                    "build_usage_guide", "build_detail_updated_at"):
             state["pipeline"].pop(key, None)
     save_state(state)
     if task_id and phase not in ("idle",):
@@ -294,6 +294,164 @@ BUILD_INTENT_LABELS = {
     "ADDITIONAL_FEATURES": "Additional dashboard features panel (AddAditionalFeatures)",
 }
 
+# Where + how users find agent-delivered functionality (Task 44).
+BUILD_USAGE_GUIDES = {
+    "DATA_ANALYTICS_ML": {
+        "headline": "Data Analytics — upload CSV/Excel and train a quick ML model",
+        "where": "Dashboard (main page) — scroll to the Data Analytics panel",
+        "route": "/",
+        "route_label": "Open Dashboard",
+        "steps": [
+            "Go to Dashboard (home page)",
+            "Find the “Data Analytics” card below the anomaly alerts",
+            "Upload a CSV or Excel file, then click Train to run the model",
+        ],
+    },
+    "ADDITIONAL_FEATURES": {
+        "headline": "Additional Features panel added to the dashboard",
+        "where": "Dashboard — “Add Aditional Features” card with status metrics",
+        "route": "/",
+        "route_label": "Open Dashboard",
+        "steps": [
+            "Open the main Dashboard",
+            "Scroll to the “Add Aditional Features” section",
+            "Review the new metrics/status widgets added by the agent",
+        ],
+    },
+    "NAVBAR_AND_SIDEBAR_NAVIGATION": {
+        "headline": "Navigation bar and sidebar links updated",
+        "where": "Left sidebar + top quick nav on every page",
+        "route": "/",
+        "route_label": "Open Dashboard",
+        "steps": [
+            "Use the left sidebar to switch pages (Dashboard, Analytics, Sprint Board, Agents)",
+            "Try the Quick Nav bar at the top of each page",
+        ],
+    },
+    "AI_COPILOT_DATE_AGNOSTIC_QUERY": {
+        "headline": "AI Data Copilot — natural-language warehouse search",
+        "where": "Dashboard — AI Data Copilot panel",
+        "route": "/",
+        "route_label": "Open Dashboard",
+        "steps": [
+            "Open Dashboard",
+            "Type a question in the AI Data Copilot box (no date required)",
+            "Submit — filters apply to charts and the data table",
+        ],
+    },
+    "SPRINT_BOARD_STYLING_AND_DROPDOWNS": {
+        "headline": "Sprint Board styling and workspace dropdowns",
+        "where": "Sprint Board page",
+        "route": "/sprints",
+        "route_label": "Open Sprint Board",
+        "steps": [
+            "Open Sprint Board from the sidebar",
+            "Use workspace/project dropdowns to filter Plane tasks",
+            "Watch the live agent pipeline while tasks run",
+        ],
+    },
+    "BROWSER_HEADER_TITLE": {
+        "headline": "Browser tab title updated",
+        "where": "Browser tab — visible on all pages",
+        "route": "/",
+        "route_label": "Open Dashboard",
+        "steps": ["Refresh any page — the browser tab title reflects the new name"],
+    },
+    "HIDE_UI_CONTENT": {
+        "headline": "Unwanted dashboard widgets hidden",
+        "where": "Dashboard — removed sections no longer appear",
+        "route": "/",
+        "route_label": "Open Dashboard",
+        "steps": ["Open Dashboard — previously hidden widgets should be gone"],
+    },
+    "REMOVE_UNWANTED_CONTENT": {
+        "headline": "Unwanted content removed from the UI",
+        "where": "Dashboard and related pages",
+        "route": "/",
+        "route_label": "Open Dashboard",
+        "steps": ["Browse Dashboard — removed panels should no longer show"],
+    },
+}
+
+
+def _infer_route_from_files(files_modified: list) -> dict:
+    """Guess primary UI route from changed file paths."""
+    joined = " ".join(files_modified or []).lower()
+    if "sprintboard" in joined or "sprint" in joined and "pages" in joined:
+        return {"route": "/sprints", "route_label": "Open Sprint Board", "where": "Sprint Board page"}
+    if "agentmonitor" in joined or "/agents" in joined:
+        return {"route": "/agents", "route_label": "Open Agent Monitor", "where": "Agent Monitor page"}
+    if "analytics.jsx" in joined or "analytics/" in joined:
+        return {"route": "/analytics", "route_label": "Open Analytics", "where": "Analytics page"}
+    if "mcp" in joined:
+        return {"route": "/mcp", "route_label": "Open MCP Explorer", "where": "MCP Explorer page"}
+    if "dashboard.jsx" in joined or "components/" in joined:
+        return {"route": "/", "route_label": "Open Dashboard", "where": "Main Dashboard (home page)"}
+    return {"route": "/", "route_label": "Open Dashboard", "where": "Main Dashboard"}
+
+
+def _build_usage_guide(
+    intents: list,
+    files_modified: list,
+    task_title: str,
+    already_applied: bool,
+) -> dict:
+    """User-facing delivery notice — where to find and how to use agent-built features."""
+    primary_intent = next((i for i in (intents or []) if i in BUILD_USAGE_GUIDES), None)
+    base = dict(BUILD_USAGE_GUIDES.get(primary_intent) or {})
+    route_hint = _infer_route_from_files(files_modified)
+
+    if not base:
+        comp_files = [f for f in (files_modified or []) if f.endswith(".jsx") and "components/" in f.replace("\\", "/")]
+        comp_name = comp_files[0].split("/")[-1].replace(".jsx", "") if comp_files else ""
+        base = {
+            "headline": task_title or "New functionality delivered by the agent",
+            "where": route_hint.get("where", "Main Dashboard"),
+            "route": route_hint.get("route", "/"),
+            "route_label": route_hint.get("route_label", "Open Dashboard"),
+            "steps": [
+                f"Open {route_hint.get('route_label', 'Dashboard').replace('Open ', '')}",
+            ],
+        }
+        if comp_name:
+            base["headline"] = f"{task_title} — {comp_name} component added"
+            base["steps"].append(f"Look for the “{comp_name}” panel on the page")
+        base["steps"].append("Changes were applied automatically — no manual coding needed")
+
+    guide = {
+        "headline": base.get("headline", task_title),
+        "where": base.get("where", route_hint.get("where", "Dashboard")),
+        "route": base.get("route", route_hint.get("route", "/")),
+        "route_label": base.get("route_label", route_hint.get("route_label", "Open Dashboard")),
+        "steps": list(base.get("steps") or []),
+        "task_title": task_title,
+        "verify_only": already_applied,
+    }
+    if already_applied:
+        guide["headline"] = f"{guide['headline']} (already in codebase — verified)"
+        guide["steps"].insert(0, "No new UI needed — existing code already matched your task")
+    return guide
+
+
+def format_delivery_comment(guide: dict) -> str:
+    """Plain-text delivery notice for Plane task comments."""
+    if not guide:
+        return ""
+    lines = [
+        "📦 **What the agent delivered**",
+        f"**{guide.get('headline', 'Feature delivered')}**",
+        "",
+        f"📍 **Where:** {guide.get('where', 'Dashboard')}",
+        f"🔗 **Open:** {guide.get('route_label', 'Dashboard')} → `{guide.get('route', '/')}`",
+        "",
+        "**How to use:**",
+    ]
+    for i, step in enumerate(guide.get("steps") or [], 1):
+        lines.append(f"{i}. {step}")
+    lines.append("")
+    lines.append("🤖 Built autonomously — no manual coding required.")
+    return "\n".join(lines)
+
 
 def _build_functionality_lines(intents: list, files_modified: list, already_applied: bool) -> list[str]:
     """Human-readable functionality summary for Build detail popup."""
@@ -333,6 +491,7 @@ def record_build_result(
     pipeline["build_duration_seconds"] = round(duration_seconds, 1)
     pipeline["build_intents"] = list(intents or [])
     pipeline["build_functionality"] = _build_functionality_lines(intents or [], real_files, already_applied)
+    pipeline["build_usage_guide"] = _build_usage_guide(intents or [], real_files, task_title, already_applied)
     pipeline["build_detail_updated_at"] = datetime.now().isoformat()
     pipeline["updated_at"] = datetime.now().isoformat()
     state["pipeline"] = pipeline
@@ -480,6 +639,10 @@ def update_queue_progress(
 
 def complete_queue_task(task_id: str, task_title: str, duration_seconds: float = 0) -> None:
     queue = get_task_queue()
+    pipeline = load_state().get("pipeline") or {}
+    delivery = None
+    if pipeline.get("task_id") == task_id and pipeline.get("build_usage_guide"):
+        delivery = pipeline["build_usage_guide"]
     entry = {
         "id": task_id,
         "title": task_title,
@@ -487,6 +650,8 @@ def complete_queue_task(task_id: str, task_title: str, duration_seconds: float =
         "duration_seconds": duration_seconds,
         "progress_pct": 100,
     }
+    if delivery:
+        entry["delivery_guide"] = delivery
     queue["completed"] = ([entry] + [t for t in queue.get("completed", []) if t.get("id") != task_id])[:30]
     queue["pending"] = [t for t in queue.get("pending", []) if t.get("id") != task_id]
     if (queue.get("active") or {}).get("id") == task_id:

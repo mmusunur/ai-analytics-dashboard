@@ -2,7 +2,9 @@
  * AgentPipelineTracker — visual 6-stage pipeline (embedded in monitor pages).
  */
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { Activity } from 'lucide-react'
+import TaskDeliveryNotice from './TaskDeliveryNotice'
 
 const PHASES = [
   { key: 'pickup', label: '1. Pickup', short: 'Pickup', agent: 'Sprint Watcher' },
@@ -53,6 +55,7 @@ function BuildDetailPanel({ open, onClose, pipeline, taskTitle, isBuilding, buil
 
   const files = pipeline?.build_files_modified || []
   const functionality = pipeline?.build_functionality || []
+  const usageGuide = pipeline?.build_usage_guide || null
   const intents = pipeline?.build_intents || []
   const outcome = pipeline?.build_outcome || ''
   const duration = pipeline?.build_duration_seconds
@@ -136,6 +139,23 @@ function BuildDetailPanel({ open, onClose, pipeline, taskTitle, isBuilding, buil
             </div>
           )}
         </div>
+
+        {usageGuide?.headline && (
+          <div style={{ marginBottom: '14px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#fcd34d', marginBottom: '8px', textTransform: 'uppercase' }}>
+              How to use (for you)
+            </div>
+            <TaskDeliveryNotice guide={usageGuide} taskTitle={taskTitle} compact />
+            {usageGuide.route && (
+              <Link
+                to={usageGuide.route}
+                style={{ fontSize: '11px', color: '#60a5fa', marginTop: '6px', display: 'inline-block' }}
+              >
+                → {usageGuide.route_label || 'Open feature'}
+              </Link>
+            )}
+          </div>
+        )}
 
         {intents.length > 0 && (
           <div style={{ marginBottom: '14px' }}>
