@@ -199,7 +199,9 @@ def set_pipeline_status(
                     "build_usage_guide", "build_detail_updated_at"):
             state["pipeline"].pop(key, None)
     save_state(state)
-    if task_id and phase not in ("idle",):
+    if task_id:
+        if phase not in ("idle",):
+            _persist_build_snapshot(task_id, state["pipeline"])
         update_queue_progress(task_id, phase, active_agent, message)
 
 

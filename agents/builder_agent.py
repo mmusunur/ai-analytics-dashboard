@@ -103,7 +103,7 @@ def handle_task(
             console.print(f"[yellow]↻ Retry build with prior test failure context ({len(failure_ctx)} chars)[/yellow]")
 
     # Step 1: Classify intent (strip retry failure blobs so NLP stays on-task)
-    update_build_progress("classifying", "Classifying task intent (NLP + rules)", task_id, task_title)
+    update_build_progress("classifying", "Classifying task intent (NLP + rules)", task_id, task_title, intents=intents)
     clean_desc = (description or "").split("=== PREVIOUS TEST")[0].strip()
     intent_result = classify_task_intent_and_intent_map(task_title, clean_desc)
     intents = intent_result["intents"]
