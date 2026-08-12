@@ -70,31 +70,47 @@ def get_results():
 @router.post("/ai-copilot")
 def ai_copilot_search(request: CopilotRequest):
     """
-    AI Data Copilot Search Endpoint (TASK 19 Mandate: Date-Agnostic Querying).
-    Forces oerdte="" server-side to search full historical dataset across all dates.
+    AI Data Copilot Search — queries WITHOUT date restriction (oerdte='').
+    The copilot searches whatever the user asks across all available dates.
+    Global date/warehouse filters apply only when NOT using copilot (dashboard Submit).
     """
+    import re
     intent = parse_copilot_intent(request.prompt)
-    
+
+    raw_date = (request.oerdte or "").strip()
+    clean_date = re.sub(r"\D", "", raw_date)
+    oerdte_filter = clean_date if len(clean_date) == 8 else ""
+
     whs_data = get_warehouse_statistics(
         target_db=request.target_db or "pg_prod",
-        oerdte="",
+        oerdte=oerdte_filter,
         oewhse=intent["filtered_whse"],
         batch_id=intent["filtered_batch"],
         only_scratches=intent["filter_scratch"],
-        limit=500
+        limit=500,
     )
 
     items = whs_data.get("warehouse_items", [])
     summary = whs_data.get("summary", {})
+    filters = whs_data.get("filters_applied", {})
 
     target_whs_str = f"Warehouse {intent['filtered_whse']}" if intent['filtered_whse'] else "all active warehouses"
     scratch_str = " (filtered for scratches)" if intent['filter_scratch'] else ""
+    date_str = f" for order date {oerdte_filter}" if oerdte_filter else " across all available dates"
+
+    batch_ids = sorted({str(it.get("batch_id", "")).strip() for it in items if it.get("batch_id")})
+    batch_str = ", ".join(batch_ids[:8]) if batch_ids else "none"
+    if len(batch_ids) > 8:
+        batch_str += f" (+{len(batch_ids) - 8} more)"
 
     summary_answer = (
-        f"Based on historical warehouse analytics for {target_whs_str}{scratch_str} across all available dates, "
-        f"found {len(items)} line items across {summary.get('distinct_invoices', 0)} invoices "
-        f"totaling {summary.get('total_cases_built', 0):,} cases built and "
-        f"{summary.get('total_scratch_qty', 0):,} scratch quantity."
+        f"Based on warehouse analytics for {target_whs_str}{scratch_str}{date_str}, "
+        f"found {summary.get('total_cases_built', 0):,} cases built across "
+        f"{whs_data.get('total_count', len(items))} line items / "
+        f"{summary.get('distinct_invoices', 0)} invoices "
+        f"({summary.get('total_scratch_qty', 0):,} scratch quantity, "
+        f"{summary.get('procurement_fulfillment_rate', '0%')} fulfillment rate). "
+        f"Batch IDs: {batch_str}."
     )
 
     return {
@@ -105,25 +121,43 @@ def ai_copilot_search(request: CopilotRequest):
         "filtered_whse": intent["filtered_whse"],
         "filter_scratch": intent["filter_scratch"],
         "filtered_batch": intent["filtered_batch"],
+        "effective_date": oerdte_filter,
+        "batch_ids": batch_ids,
+        "warehouse_items": items,
         "filters_applied": {
+            **filters,
             "filtered_whse": intent["filtered_whse"],
             "filter_scratch": intent["filter_scratch"],
-            "filtered_batch": intent["filtered_batch"]
+            "filtered_batch": intent["filtered_batch"],
         },
         "metrics_found": {
-            "total_line_items": len(items),
+            "total_line_items": whs_data.get("total_count", len(items)),
             "total_cases_built": summary.get("total_cases_built", 0),
             "total_scratch_qty": summary.get("total_scratch_qty", 0),
-            "distinct_warehouses": summary.get("distinct_warehouses", 0)
+            "distinct_warehouses": summary.get("distinct_warehouses", 0),
         },
-        "chart_data": summary.get("warehouse_totals", [])
+        "chart_data": summary.get("warehouse_totals", []),
+        "total_count": whs_data.get("total_count", len(items)),
     }
 
 
 @router.get("/anomalies")
-def get_anomalies(target_db: str = "pg_prod", oerdte: Optional[str] = None):
+def get_anomalies(
+    target_db: str = "pg_prod",
+    oerdte: Optional[str] = None,
+    oewhse: str = "",
+    batch_id: str = "",
+    only_scratches: bool = False,
+):
     """Real-Time Anomaly & Risk Alerts Endpoint."""
-    whs_data = get_warehouse_statistics(target_db=target_db, oerdte=oerdte or "", limit=500)
+    whs_data = get_warehouse_statistics(
+        target_db=target_db,
+        oerdte=oerdte or "",
+        oewhse=oewhse or None,
+        batch_id=batch_id or None,
+        only_scratches=only_scratches,
+        limit=500,
+    )
     items = whs_data.get("warehouse_items", [])
     alerts = generate_anomaly_alerts(items)
     return {

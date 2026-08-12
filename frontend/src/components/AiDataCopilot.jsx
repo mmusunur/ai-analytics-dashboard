@@ -20,7 +20,7 @@ export default function AiDataCopilot({ globalDate, globalTargetDb = 'pg_dev', o
     "Fulfillment Operations Breakdown"
   ];
 
-  // Re-run when DB changes (NOT date — copilot is date-agnostic, queries full dataset)
+  // Re-run when target DB changes (copilot never uses global date)
   useEffect(() => {
     if (prompt && copilotResult) {
       handleQuery(prompt);
@@ -34,21 +34,17 @@ export default function AiDataCopilot({ globalDate, globalTargetDb = 'pg_dev', o
     setLastQuery(q);
     setLoading(true);
     try {
-      // ✅ Copilot intentionally sends NO date — it queries the full dataset across all dates.
-      // Date filtering is only applied on regular Dashboard/Chart/Table views via global date param.
       const res = await axios.post(`${API}/api/analytics/ai-copilot`, {
         prompt: q,
         target_db: globalTargetDb,
-        oerdte: ''  // Always blank: copilot is date-agnostic by design
+        oerdte: '',
       });
       setCopilotResult(res.data);
-      // Auto-apply filter immediately when Copilot returns result
       if (res.data && onApplyFilter) {
         onApplyFilter({
           whse: res.data.filtered_whse || '',
           batch: res.data.filtered_batch || '',
           invoice: res.data.filtered_invoice || '',
-          effectiveDate: res.data.effective_date || '',
           onlyScratches: res.data.filter_scratch || false
         });
         setFilterApplied(true);
@@ -70,7 +66,6 @@ export default function AiDataCopilot({ globalDate, globalTargetDb = 'pg_dev', o
         whse: copilotResult.filtered_whse || '',
         batch: copilotResult.filtered_batch || '',
         invoice: copilotResult.filtered_invoice || '',
-        effectiveDate: copilotResult.effective_date || '',
         onlyScratches: copilotResult.filter_scratch || false
       });
     }
@@ -125,7 +120,7 @@ export default function AiDataCopilot({ globalDate, globalTargetDb = 'pg_dev', o
               Copilot Mode Active
             </span>
             <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-              — Dashboard showing full dataset (date filter bypassed)
+              — Searching without date restriction (all available dates)
             </span>
             {lastQuery && (
               <span style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>

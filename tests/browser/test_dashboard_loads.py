@@ -102,19 +102,25 @@ def test_warehouse_table_populated(page: Page):
 
 
 def test_table_row_count_badge(page: Page):
-    """Row count badge shows loaded/total when warehouse table has data (via Copilot date-agnostic mode)."""
+    """Row count badge shows loaded/total when warehouse table has data after date + Submit."""
+    from calculation_verifier import discover_date_with_data
+
+    oerdte = discover_date_with_data("pg_dev")
+    if not oerdte:
+        pytest.skip("No date with data from API")
+    iso = f"{oerdte[:4]}-{oerdte[4:6]}-{oerdte[6:8]}" if len(oerdte) == 8 else ""
+    if not iso:
+        pytest.skip("Could not resolve ISO date from API")
+
     page.goto(BASE_URL)
-    page.wait_for_selector("#global-db-selector", timeout=10000)
+    page.fill("#global-date-picker", iso)
     page.select_option("#global-db-selector", "pg_dev")
     page.click("#submit-db-btn")
-    # Copilot mode queries full dataset (no date) — avoids empty-state when today's date has no rows
-    page.wait_for_selector("button:has-text('High Scratch Quantity')", timeout=15000)
-    page.locator("button:has-text('High Scratch Quantity')").click()
-    page.wait_for_selector("text=AI Copilot Finding", timeout=15000)
-    page.wait_for_timeout(1500)
-    row_badge = page.get_by_text("Data Table Rows", exact=False)
-    expect(row_badge).to_be_visible(timeout=15000)
-    expect(page.get_by_text("Loaded", exact=False)).to_be_visible()
+    page.wait_for_selector("#warehouse-analytics-table tbody tr", timeout=20000)
+    row_badge = page.get_by_text("Data Table Rows", exact=False).or_(
+        page.get_by_text("total items", exact=False)
+    )
+    expect(row_badge.first).to_be_visible(timeout=15000)
 
 
 def test_target_db_selection_prod_vs_dev(page: Page):

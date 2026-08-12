@@ -30,29 +30,37 @@ export function AgentWorkingProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false
+    let failCount = 0
 
     const poll = async () => {
       try {
-        const res = await axios.get(`${API}/api/sprints/agent-working`, { timeout: 4000 })
+        const res = await axios.get(`${API}/api/sprints/agent-working`, { timeout: 3000 })
         if (cancelled) return
+        failCount = 0
         const working = res.data?.agent_working === true
         setAgentWorking(working)
         setAgentWorkingTask(res.data?.task || '')
         setAgentWorkingSince(res.data?.since || null)
         prevWorking.current = working
       } catch {
-        // Non-critical: if the endpoint fails, don't change existing state
-        // (avoid flipping to "not working" on a transient network error)
+        if (cancelled) return
+        failCount += 1
+        // Backend unreachable — don't leave UI frozen in agent_working state
+        if (failCount >= 2) {
+          setAgentWorking(false)
+          setAgentWorkingTask('')
+          setAgentWorkingSince(null)
+        }
       }
     }
 
-    poll() // immediate first poll
-    const interval = setInterval(poll, agentWorking ? 2000 : 5000)
+    poll()
+    const interval = setInterval(poll, 8000)
     return () => {
       cancelled = true
       clearInterval(interval)
     }
-  }, [agentWorking])
+  }, [])
 
   return (
     <AgentWorkingContext.Provider value={{ agentWorking, agentWorkingTask, agentWorkingSince }}>

@@ -21,6 +21,30 @@ router = APIRouter()
 _watcher_lock = threading.Lock()
 _last_trigger_time = 0.0
 
+# Short-lived response cache — UI polls /tasks every ~12s; avoid hammering Plane (HTTP 429).
+_sprint_tasks_cache = {"key": "", "payload": None, "ts": 0.0}
+_sprint_tasks_cache_ttl = 12.0
+_workspaces_cache = {"payload": None, "ts": 0.0}
+_workspaces_cache_ttl = 45.0
+
+
+def _sprint_cache_key(ws: str, pid: str) -> str:
+    return f"{ws}:{pid or 'all'}"
+
+
+def _get_sprint_tasks_cache(key: str):
+    if _sprint_tasks_cache["key"] != key:
+        return None
+    if time.time() - _sprint_tasks_cache["ts"] >= _sprint_tasks_cache_ttl:
+        return None
+    return _sprint_tasks_cache["payload"]
+
+
+def _set_sprint_tasks_cache(key: str, payload: dict):
+    _sprint_tasks_cache["key"] = key
+    _sprint_tasks_cache["payload"] = payload
+    _sprint_tasks_cache["ts"] = time.time()
+
 
 def trigger_watcher_in_background(workspace_slug: Optional[str] = None, project_id: Optional[str] = None):
     """
@@ -147,6 +171,9 @@ def clear_processed_task_ids():
 @router.get("/workspaces")
 def get_plane_workspaces():
     """Fetch all available Plane workspaces and projects for workspace selection."""
+    cached = _workspaces_cache.get("payload")
+    if cached and time.time() - _workspaces_cache["ts"] < _workspaces_cache_ttl:
+        return JSONResponse(cached)
     try:
         from plane_agent import list_workspaces, list_projects
         workspaces = list_workspaces()
@@ -163,10 +190,13 @@ def get_plane_workspaces():
                     for p in projects
                 ]
             })
-        return JSONResponse({"status": "success", "workspaces": data})
+        payload = {"status": "success", "workspaces": data}
+        _workspaces_cache["payload"] = payload
+        _workspaces_cache["ts"] = time.time()
+        return JSONResponse(payload)
     except Exception as e:
         print(f"[Workspaces API Error]: {e}")
-        return JSONResponse({
+        fallback = {
             "status": "fallback",
             "workspaces": [
                 {
@@ -178,7 +208,10 @@ def get_plane_workspaces():
                     ]
                 }
             ]
-        })
+        }
+        _workspaces_cache["payload"] = fallback
+        _workspaces_cache["ts"] = time.time()
+        return JSONResponse(fallback)
 
 
 @router.get("/tasks")
@@ -194,6 +227,11 @@ def get_sprint_tasks(workspace_slug: Optional[str] = Query(None), project_id: Op
 
         ws = ws_str or state.get("plane_workspace_slug") or "agentbuilder"
         pid = pid_str or state.get("plane_project_id") or "all"
+
+        cache_key = _sprint_cache_key(str(ws), str(pid))
+        cached_payload = _get_sprint_tasks_cache(cache_key)
+        if cached_payload is not None:
+            return JSONResponse(cached_payload, headers={"X-Sprint-Cache": "HIT"})
 
         state["plane_workspace_slug"] = str(ws)
         state["plane_project_id"] = str(pid)
@@ -348,7 +386,7 @@ def get_sprint_tasks(workspace_slug: Optional[str] = Query(None), project_id: Op
         completed_count = len(completed_list)
         completion_pct = round((completed_count / open_tasks * 100), 1) if open_tasks > 0 else 100.0
 
-        return JSONResponse({
+        payload = {
             "status": "success",
             "workspace_slug": ws,
             "project_id": pid,
@@ -386,7 +424,9 @@ def get_sprint_tasks(workspace_slug: Optional[str] = Query(None), project_id: Op
                 ]
             },
             "active_agent_tasks": state.get("active_tasks", [])
-        })
+        }
+        _set_sprint_tasks_cache(cache_key, payload)
+        return JSONResponse(payload, headers={"X-Sprint-Cache": "MISS"})
 
     except Exception as e:
         print(f"[Sprints API Error]: {repr(e)}")

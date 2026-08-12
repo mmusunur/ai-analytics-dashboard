@@ -18,8 +18,10 @@ const PHASES = [
   { key: 'done', label: '6. Done', agent: '' },
 ]
 
+const normalizePhase = (phase) => (phase === 'retry' ? 'building' : phase)
+
 const phaseIndex = (phase) => {
-  const i = PHASES.findIndex((p) => p.key === phase)
+  const i = PHASES.findIndex((p) => p.key === normalizePhase(phase))
   return i >= 0 ? i : -1
 }
 
@@ -33,7 +35,7 @@ export default function AgentPipelineStatus({ compact = true }) {
         .catch(() => {})
     }
     fetchStatus()
-    const timer = setInterval(fetchStatus, 4000)
+    const timer = setInterval(fetchStatus, 10000)
     return () => clearInterval(timer)
   }, [])
 
@@ -129,8 +131,11 @@ export default function AgentPipelineStatus({ compact = true }) {
           let border = '1px solid rgba(255,255,255,0.08)'
           if (phase === 'done' || (currentIdx >= 0 && i < currentIdx)) {
             bg = 'rgba(16,185,129,0.15)'; color = '#34d399'; border = '1px solid rgba(16,185,129,0.3)'
-          } else if (p.key === phase) {
-            bg = 'rgba(124,58,237,0.25)'; color = '#e9d5ff'; border = '1px solid rgba(124,58,237,0.5)'
+          } else if (p.key === normalizePhase(phase)) {
+            const isRetry = phase === 'retry' && p.key === 'building'
+            bg = isRetry ? 'rgba(245,158,11,0.2)' : 'rgba(124,58,237,0.25)'
+            color = isRetry ? '#fcd34d' : '#e9d5ff'
+            border = isRetry ? '1px solid rgba(245,158,11,0.5)' : '1px solid rgba(124,58,237,0.5)'
           } else if (phase === 'failed' && p.key === 'testing') {
             bg = 'rgba(239,68,68,0.15)'; color = '#fca5a5'; border = '1px solid rgba(239,68,68,0.4)'
           }
@@ -142,7 +147,7 @@ export default function AgentPipelineStatus({ compact = true }) {
                 background: bg, color, border,
               }}
             >
-              {p.label}
+              {phase === 'retry' && p.key === 'building' ? '2. Build (retry)' : p.label}
             </span>
           )
         })}

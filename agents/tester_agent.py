@@ -1,4 +1,5 @@
 import sys
+import os
 import json
 import subprocess
 from pathlib import Path
@@ -6,12 +7,26 @@ from datetime import datetime
 from rich.console import Console
 from rich.panel import Panel
 
-from memory_manager import update_agent_status, log_task_result, save_state, load_state
+from memory_manager import update_agent_status, log_task_result, save_state, load_state, update_test_progress, clear_test_progress
 
 console = Console(force_terminal=True)
 ROOT_DIR = Path(__file__).parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 TESTS_DIR = ROOT_DIR / "tests"
 REPORTS_DIR = ROOT_DIR / "reports"
+
+
+def _parse_pytest_counts(stdout: str, code: int) -> tuple[int, int, int]:
+    """Parse pytest summary line (works for -q and -v)."""
+    import re
+    passed_m = re.search(r"(\d+)\s+passed", stdout)
+    failed_m = re.search(r"(\d+)\s+failed", stdout)
+    error_m = re.search(r"(\d+)\s+error", stdout)
+    passed = int(passed_m.group(1)) if passed_m else (1 if code == 0 else 0)
+    failed = int(failed_m.group(1)) if failed_m else 0
+    errors = int(error_m.group(1)) if error_m else 0
+    return passed, failed, errors
 
 
 def _run_command(cmd: list[str], cwd: Path = ROOT_DIR) -> tuple[str, str, int]:
@@ -64,25 +79,26 @@ def register_sprint_task_tests(
         return 0
 
 
-def run_unit_tests() -> dict:
+def run_unit_tests(fast: bool = False) -> dict:
     """Run pytest unit tests and return structured results."""
-    console.print("\n[bold cyan][UNIT-TESTS] Running Unit Tests...[/bold cyan]")
+    label = "Fast unit gate" if fast else "Full unit suite"
+    console.print(f"\n[bold cyan][UNIT-TESTS] Running {label}...[/bold cyan]")
     REPORTS_DIR.mkdir(exist_ok=True)
     report_path = REPORTS_DIR / "unit_test_report.html"
 
-    stdout, stderr, code = _run_command([
-        "python", "-m", "pytest",
-        "tests/unit/",
-        "-v",
-        "--tb=short",
-        f"--html={report_path}",
-        "--self-contained-html",
-        "-q"
-    ])
+    cmd = ["python", "-m", "pytest", "tests/unit/", "--tb=line", "-q"]
+    if fast:
+        cmd.extend(["--no-header", "-ra"])
+    else:
+        cmd.extend([
+            "-v", "--tb=short",
+            f"--html={report_path}",
+            "--self-contained-html",
+        ])
 
-    passed = stdout.count(" PASSED")
-    failed = stdout.count(" FAILED")
-    errors = stdout.count(" ERROR")
+    stdout, stderr, code = _run_command(cmd)
+
+    passed, failed, errors = _parse_pytest_counts(stdout + stderr, code)
 
     result = {
         "type": "unit",
@@ -104,19 +120,28 @@ def run_unit_tests() -> dict:
     return result
 
 
-def run_browser_tests() -> dict:
+FAST_BROWSER_TARGETS = [
+    "tests/browser/test_dashboard_loads.py::test_dashboard_loads",
+    "tests/browser/test_dashboard_loads.py::test_sidebar_navigation",
+    "tests/browser/test_sprint_task_dynamic.py",
+]
+
+
+def run_browser_tests(fast: bool = False) -> dict:
     """Run Playwright browser tests (requires frontend :5173 and backend :8000)."""
-    console.print("\n[bold cyan][BROWSER-TESTS] Running Playwright Browser Tests...[/bold cyan]")
+    label = "targeted smoke + sprint cases" if fast else "full Playwright suite"
+    console.print(f"\n[bold cyan][BROWSER-TESTS] Running {label}...[/bold cyan]")
     REPORTS_DIR.mkdir(exist_ok=True)
     report_path = REPORTS_DIR / "browser_test_report.html"
 
     # Mandatory: application must be running before browser tests
     sys.path.insert(0, str(ROOT_DIR / "scripts"))
+    wait_seconds = 10 if fast else 25
     try:
         from server_health import ensure_servers_running, servers_healthy
         if not servers_healthy()["healthy"]:
             console.print("[yellow][BROWSER-TESTS] Servers not up — auto-starting backend & frontend...[/yellow]")
-        if not ensure_servers_running(wait_seconds=25):
+        if not ensure_servers_running(wait_seconds=wait_seconds):
             return {
                 "type": "browser",
                 "passed": 0,
@@ -130,20 +155,22 @@ def run_browser_tests() -> dict:
     except Exception as e:
         console.print(f"[yellow][BROWSER-TESTS] Server health check warning: {e}[/yellow]")
 
-    _run_command(["python", "-m", "playwright", "install", "chromium", "--with-deps"])
+    # Chromium is installed by start_all_services — skip redundant install (saves 1–3 min per run)
 
-    stdout, stderr, code = _run_command([
-        "python", "-m", "pytest",
-        "tests/browser/",
-        "-v",
-        "--tb=short",
-        f"--html={report_path}",
-        "--self-contained-html",
-        "-q"
-    ])
+    cmd = ["python", "-m", "pytest", "--tb=line", "-q"]
+    if fast:
+        cmd.extend(FAST_BROWSER_TARGETS)
+    else:
+        cmd.extend([
+            "tests/browser/",
+            "-v", "--tb=short",
+            f"--html={report_path}",
+            "--self-contained-html",
+        ])
 
-    passed = stdout.count(" PASSED")
-    failed = stdout.count(" FAILED")
+    stdout, stderr, code = _run_command(cmd)
+
+    passed, failed, _errors = _parse_pytest_counts(stdout + stderr, code)
 
     result = {
         "type": "browser",
@@ -169,24 +196,47 @@ def run_all_tests(
     task_title: str | None = None,
     description: str | None = None,
     project_name: str | None = None,
+    mode: str = "full",
 ) -> dict:
     """Run unit + browser tests (including dynamic sprint task cases), update TEST_CASES.xlsx."""
-    update_agent_status("tester", "running", "Full test suite")
+    fast = mode == "fast"
+    suite_label = "Fast quality gate" if fast else "Full test suite"
+    update_agent_status("tester", "running", suite_label)
+    tid = task_id or ""
+    title = task_title or ""
+
+    update_test_progress(
+        "starting",
+        "Fast test gate — smoke + sprint cases" if fast else "Test gate — preparing quality suite",
+        tid,
+        title,
+    )
 
     if task_id and task_title:
+        update_test_progress("sprint_cases", "Registering sprint task browser cases", tid, title)
         register_sprint_task_tests(
             task_id, task_title, description or task_title, project_name or ""
         )
 
     console.print(Panel.fit(
-        "[bold]Tester Agent — Full Test Suite & Auto Excel Sync[/bold]\n"
-        f"[dim]{datetime.now().strftime('%Y-%m-%d %H:%M')}[/dim]"
+        f"[bold]Tester Agent — {suite_label} & Auto Excel Sync[/bold]\n"
+        f"[dim]{datetime.now().strftime('%Y-%m-%d %H:%M')} · mode={mode}[/dim]"
         + (f"\n[cyan]Sprint Task: {task_title}[/cyan]" if task_title else ""),
         border_style="cyan"
     ))
 
-    unit_results = run_unit_tests()
-    browser_results = run_browser_tests()
+    update_test_progress("unit", "Running unit tests (pytest tests/unit/)", tid, title)
+    unit_results = run_unit_tests(fast=fast)
+
+    browser_msg = (
+        "Running targeted browser smoke + sprint cases (~1–3 min)"
+        if fast
+        else "Running full browser suite (Playwright — may take 5–15 min)"
+    )
+    update_test_progress("browser", browser_msg, tid, title)
+    browser_results = run_browser_tests(fast=fast)
+
+    update_test_progress("excel", "Updating TEST_CASES.xlsx matrix", tid, title)
 
     combined = {
         "unit": unit_results,
@@ -234,6 +284,7 @@ def run_all_tests(
     )
 
     update_agent_status("tester", "idle")
+    clear_test_progress()
 
     if combined["all_passed"]:
         console.print(Panel(
@@ -261,6 +312,12 @@ if __name__ == "__main__":
     parser.add_argument("--task-title", default=None)
     parser.add_argument("--description", default=None)
     parser.add_argument("--project-name", default=None)
+    parser.add_argument(
+        "--mode",
+        choices=("full", "fast"),
+        default=os.getenv("SPRINT_TEST_MODE", "full"),
+        help="full = all browser tests; fast = unit + smoke + sprint task cases only",
+    )
     args = parser.parse_args()
 
     results = run_all_tests(
@@ -268,6 +325,7 @@ if __name__ == "__main__":
         task_title=args.task_title,
         description=args.description,
         project_name=args.project_name,
+        mode=args.mode,
     )
     print(json.dumps(results, indent=2))
     sys.exit(0 if results.get("all_passed") else 1)

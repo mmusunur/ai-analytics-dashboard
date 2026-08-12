@@ -4,6 +4,75 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 
 ---
 
+## 🤖 Sprint Agent — Mandatory Step Gates (Task 37) — **NO SKIPPING**
+
+**Full spec:** [`tasks/task_37_auto_retry_until_tests_pass.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_37_auto_retry_until_tests_pass.md)
+
+### Pipeline steps (each must PASS before the next runs)
+
+| Step | Agent | Gate rule | On failure |
+|------|-------|-----------|------------|
+| **1. Pickup** | Sprint Watcher | Move Plane task → In Progress | Retry pickup next poll |
+| **2. Build** | Builder | Code changes + builder exit 0 | **Stay on Build** — retry same step up to N times. **Do NOT run Test.** |
+| **3. Test** | Tester | Unit + browser + sprint tests pass | **Return to Build** with failure log — fix code, then Test again |
+| **3b. Verify-close** | Tester | **Only if Build already ✓** — re-test to close on Plane | If tests fail → **idle/waiting UI** (not frozen at 65%); retry after cooldown. **Do not** set `agent_working` during Test. |
+| **4. Close** | Plane Agent | Mark Completed on Plane | Only after Test passes |
+| **5. Git Push** | Git Agent | Commit **all meaningful repo paths** (see folder map below) | **Done ✓ only if commit succeeds OR tree clean** — never skip because verify-close |
+| **6. Done** | — | UI shows Done | Plane closed **and** git gate passed |
+
+### Mandatory rules (agents MUST follow)
+
+1. **Never skip a failed step** — if Build fails, Test must **not** start.
+2. **Retry the same step** — Build failure → retry Build with error context; Test failure → go back to Build (not straight to Close).
+3. **No human To Do move** between retries — agent auto-moves To Do and re-picks after all cycles exhausted.
+4. **UI checkmarks** — a step shows ✓ only when that step **actually passed** (`completed_steps` in pipeline state).
+5. **Plane In Progress** during Build/Test is normal — **Done** only when all gates pass.
+6. **Test heartbeat** — `tester_agent.py` writes `test_subphase` + `test_started_at` to pipeline state (starting → sprint_cases → unit → browser → excel). UI shows sub-phase chips and elapsed time. **`agent_working` is Build-only** — UI keeps polling during long Test runs.
+7. **Verify-close failure** — pipeline resets to `idle` with a cooldown message (not stuck at 65% Testing). Sprint watcher retries verify-close after cooldown when task stays In Progress.
+8. **Git gate (Task 38)** — Step 6 Done requires git sync. Git runs for **every** close (including verify-close), not only when Builder ran. Watcher **git sweep** retries uncommitted `agents/`, `backend/`, `frontend/src/`, `tasks/`, `tests/`, etc. each idle poll.
+
+### 📁 Repo folder map — Git Agent commit allowlist
+
+| Path | Commit after sprint task? |
+|------|---------------------------|
+| `agents/` | ✅ Agent pipeline code |
+| `backend/` | ✅ FastAPI, routers, services, `data/` seed |
+| `frontend/src/` | ✅ React components, pages, context |
+| `scripts/` | ✅ Launchers, watcher, PPTX generators |
+| `tasks/` + `tasks.md` | ✅ Specs & task docs |
+| `tests/` | ✅ Unit + browser + Excel matrix |
+| `config/` | ✅ Plane/MCP config |
+| `docs/`, `mcp_servers/` | ✅ Documentation & MCP registry |
+| Root | ✅ `README.md`, `.env.example`, `*.pptx` presentations |
+| `memory/` (runtime) | ❌ agent_state, processed IDs, retry blobs |
+| `.env`, `node_modules/`, `reports/` | ❌ Secrets, deps, generated reports |
+
+### ⚡ Smart performance (complete tasks faster)
+
+| Situation | Smart behavior | Typical time |
+|-----------|----------------|--------------|
+| **After Build (code changed)** | `full` mode — all unit + all browser tests | ~5–15 min |
+| **Verify-close (Build already ✓)** | `fast` mode — unit + 2 smoke browser tests + sprint task cases only | ~2–4 min |
+| **Watcher idle** | Poll Plane every **30s** | — |
+| **Watcher has active task** | Poll every **15s** (`SPRINT_ACTIVE_POLL_INTERVAL`) | — |
+| **Verify-close retry** | Cooldown **45s** (`SPRINT_VERIFY_CLOSE_COOLDOWN`) | — |
+
+**Rules:** Never skip the Test gate — choose the **smallest test set that still validates the change**. Full comprehensive browser suite runs only after Build; verify-close uses targeted smoke + sprint cases. Override with env `SPRINT_TEST_MODE=full|fast`.
+
+### Human vs agent
+
+| Who | Action |
+|-----|--------|
+| **Human** | Create task in Plane → To Do **once** |
+| **Agent** | Everything else — pickup, build, test, retry, close, git |
+| **Human** | **Do not** manually move task between retries |
+
+**Restart sprint watcher** after changing `agents/sprint_watcher_agent.py`.
+
+**Do not** manually implement an open Plane sprint task in Cursor (e.g. Data Analytics) — let the sprint pipeline run it.
+
+---
+
 ## 🚨 Section 1: Mandatory Operational Rules & Git Automation
 - 📄 [`tasks/section_1_mandatory_tasks.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/section_1_mandatory_tasks.md)
   - 6-Stage Autonomous Lifecycle Pipeline (Pickup → Understand → Build → Test → Close → Git Push)
@@ -18,7 +87,7 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 ## 🖥️ Section 2: Architecture & Data Flow Rules
 - 📄 [`tasks/section_2_system_architecture.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/section_2_system_architecture.md)
   - Full Technology Stack (React + Vite, FastAPI, PostgreSQL, Plane API)
-  - Header Parameter Propagation & Date-Agnostic Copilot Rules
+  - Header Parameter Propagation & **Dual Search Rules (Task 36)**
   - Single-Warehouse Chart Filtering Specifications
 
 ---
@@ -26,7 +95,8 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 ## 📑 Section 3: Screen-by-Screen Component Task Files
 
 ### 🎯 Global Controls & Header
-- 📄 [`tasks/task_1_header_controls.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_1_header_controls.md) — Header Controls Panel
+- 📄 [`tasks/task_1_header_controls.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_1_header_controls.md) — Header Controls Panel (Global Search Mode 1: date + DB + warehouse + Submit)
+- 📄 [`tasks/task_36_dual_search_global_vs_copilot.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_36_dual_search_global_vs_copilot.md) — **Dual Search Architecture:** Global Header vs AI Copilot (date vs no-date, mode switching, DoD)
 - 📄 [`tasks/task_26_memory_and_sprint_automation.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_26_memory_and_sprint_automation.md) — Dynamic `#header-clear-filter` Component
 
 ### 📊 Summary Cards & Visualizations
@@ -39,7 +109,7 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 
 ### 🧠 AI & Agent Network
 - 📄 [`tasks/task_6_agents_and_mcp.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_6_agents_and_mcp.md) — Autonomous Agent Network & Plane PM Integration
-- 📄 [`tasks/task_14_ai_data_copilot.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_14_ai_data_copilot.md) — Natural Language AI Data Copilot
+- 📄 [`tasks/task_14_ai_data_copilot.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_14_ai_data_copilot.md) — Natural Language AI Data Copilot (Copilot Search Mode 2: no date parameter)
 - 📄 [`tasks/task_15_anomaly_alert_panel.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_15_anomaly_alert_panel.md) — Real-Time Anomaly & Risk Alerts
 - 📄 [`tasks/task_28_memory_and_daily_task_updates.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_28_memory_and_daily_task_updates.md) — Daily Memory Persistence & State Updating Engine
 
@@ -54,6 +124,9 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 - 📄 [`tasks/task_32_application_uptime_and_sprint_pipeline.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_32_application_uptime_and_sprint_pipeline.md) — Application Must Stay Running + Sprint Pipeline Quality Gates
 - 📄 [`tasks/task_33_automatic_documentation_updates.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_33_automatic_documentation_updates.md) — Auto-Update README, tasks/, docs/, PPTX + DOCX on Major Changes (`python docs/sync_all_documentation.py`)
 - 📄 [`tasks/task_34_sprint_close_on_test_pass.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_34_sprint_close_on_test_pass.md) — Close Plane Sprint Task When Quality Gate Tests Pass (never leave Completed work stuck In Progress)
+- 📄 [`tasks/task_35_comprehensive_browser_testing.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_35_comprehensive_browser_testing.md) — Comprehensive Browser Tests: All Fields + Submit + Calculation Verification + Excel Status Sync (see Task 36 for dual search rules)
+- 📄 [`tasks/task_37_auto_retry_until_tests_pass.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_37_auto_retry_until_tests_pass.md) — **Auto-Retry Until Pass:** On test failure agent rebuilds automatically with failure context; UI shows retry/failed/done clearly (no manual To Do move)
+- 📄 [`tasks/task_38_git_repo_sync_gate.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_38_git_repo_sync_gate.md) — **Git Repo Sync Gate:** Commit allowlist by folder structure; never mark Done without git sync; idle git sweep
 
 ---
 

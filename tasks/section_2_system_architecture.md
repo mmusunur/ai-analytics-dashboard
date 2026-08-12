@@ -13,6 +13,18 @@ This document details the core architecture, framework dependencies, and data fl
 ---
 
 ## 2. Dynamic Data Flow Rules
-1. **Header Date & Database Selectors**: Header controls (`#global-date-picker`, `#global-db-selector`) propagate parameters across Dashboard API calls (`/api/charts/kpi`, `/api/charts/bar`, `/api/charts/scatter`, `/api/warehouse/statistics`).
-2. **Date-Agnostic Copilot Rule**: AI Copilot (`/api/analytics/ai-copilot`) MUST query the full dataset across ALL dates to answer user questions, bypassing the header date filter.
-3. **Single Warehouse Filtering Rule**: When a warehouse filter is active, Bar Chart and Scatter Plot display data ONLY for that selected warehouse facility.
+
+### 2.1 Dual Search Architecture (Task 36)
+The dashboard operates in one of two mutually exclusive search modes:
+
+| Mode | Trigger | Date (`oerdte`) | Source |
+|------|---------|-----------------|--------|
+| **Global Header** | `#submit-db-btn` or global whse change | Selected order date | Task 1 |
+| **AI Copilot** | `#copilot-input` + Ask AI | Empty (`''`) — all dates | Task 14 |
+
+See [`tasks/task_36_dual_search_global_vs_copilot.md`](task_36_dual_search_global_vs_copilot.md) for full specification.
+
+### 2.2 Parameter Propagation
+1. **Global Mode:** Header controls (`#global-date-picker`, `#global-db-selector`, `#global-whse-selector`) propagate `oerdte`, `target_db`, and `oewhse` to `/api/charts/*` and `/api/warehouse/statistics`.
+2. **Copilot Mode:** Copilot POST sends `oerdte=""`. Dashboard widgets sync to no-date queries until Submit or Clear restores global mode.
+3. **Single Warehouse Filtering Rule:** When a warehouse filter is active, Bar Chart and Scatter Plot display data ONLY for that selected warehouse facility.

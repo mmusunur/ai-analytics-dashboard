@@ -35,7 +35,8 @@ def classify_task_intent_with_llm(task_title: str, description: str) -> Dict:
                 f"  SPRINT_BOARD_STYLING_AND_DROPDOWNS, NAVBAR_AND_SIDEBAR_NAVIGATION,\n"
                 f"  MULTI_TARGET_DATABASE_ARCHITECTURE, SPRINT_AGENT_FIX,\n"
                 f"  UI_PERFORMANCE_AND_REFRESH, ROUTE_AND_NAVIGATION_FIX,\n"
-                f"  BACKEND_QUERY_FIX, API_ENDPOINT_FIX, TEST_COVERAGE_AND_EXCEL\n"
+                f"  BACKEND_QUERY_FIX, API_ENDPOINT_FIX, TEST_COVERAGE_AND_EXCEL,\n"
+                f"  DATA_ANALYTICS_ML\n"
                 f"- 'target_files': list of repo-relative file paths to modify\n"
                 f"- 'action_summary': concise one-line description of the code change needed\n"
             )
@@ -115,6 +116,23 @@ def classify_task_intent_with_llm(task_title: str, description: str) -> Dict:
             "backend/routers/analytics.py"
         ]
 
+    # --- Category 3b: Data Analytics / ML Upload & Train -------------------
+    if any(p in text_clean for p in [
+        "data analytics", "ml analytics", "machine learning", "train model",
+        "model training", "upload csv", "upload excel", "csv upload", "excel upload",
+        "csv/excel", "predictive model", "feature importance",
+    ]) or text_clean.strip() in ("data analytics", "analytics"):
+        intents.append("DATA_ANALYTICS_ML")
+        actions.append("BUILD_DATA_ANALYTICS_UPLOAD_TRAIN_DASHBOARD_PANEL")
+        target_files += [
+            "frontend/src/components/DataAnalytics.jsx",
+            "frontend/src/pages/Analytics.jsx",
+            "frontend/src/pages/Dashboard.jsx",
+            "backend/routers/data.py",
+            "backend/routers/analytics.py",
+            "tests/unit/test_dataanalytics.py",
+        ]
+
     # --- Category 4: Anomaly & Scratch Quantity -------------------------------
     if any(p in text_clean for p in [
         "scratch quantity", "scrtch", "critical anomaly", "risk alert",
@@ -164,14 +182,19 @@ def classify_task_intent_with_llm(task_title: str, description: str) -> Dict:
     if any(p in text_clean for p in [
         "sprint agent", "watcher agent", "task pickup", "task status", "plane task",
         "plane issue", "agent not picking", "not picking", "sprint watcher",
-        "builder agent", "status change", "in progress", "backlog to", "task state"
+        "builder agent", "status change", "in progress", "backlog to", "task state",
+        "auto retry", "auto-retry", "retry until", "test fail", "fix himself",
+        "keep running", "until tests pass", "task 37",
     ]):
         intents.append("SPRINT_AGENT_FIX")
         actions.append("FIX_SPRINT_AGENT_TASK_PICKUP_AND_STATUS_TRANSITIONS")
+        actions.append("IMPLEMENT_AUTO_RETRY_UNTIL_TESTS_PASS_TASK_37")
         target_files += [
             "agents/sprint_watcher_agent.py",
             "agents/plane_agent.py",
             "agents/builder_agent.py",
+            "agents/memory_manager.py",
+            "tasks/task_37_auto_retry_until_tests_pass.md",
             "backend/routers/sprints.py"
         ]
 

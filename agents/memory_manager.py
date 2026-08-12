@@ -71,21 +71,14 @@ def update_agent_status(agent_name: str, status: str, current_task: str = "Idle"
 def set_agent_working(is_working: bool, task_title: str = ""):
     """
     Broadcast a global 'agent_working' flag to the frontend.
-    When True: the frontend pauses all API polling to prevent UI disruption
-    while the builder agent is actively modifying files / running tests.
+    When True: pause aggressive polling during Build (file changes / hot reload).
+    Do NOT set True during Test — browser tests run 5–15 min; UI must stay live.
     Always call set_agent_working(False) in a finally block.
     """
     state = load_state()
     state["agent_working"] = is_working
     state["agent_working_task"] = task_title if is_working else ""
     state["agent_working_since"] = datetime.now().isoformat() if is_working else None
-    if not is_working and state.get("pipeline", {}).get("phase") not in ("done", "failed"):
-        pipeline = state.get("pipeline", {})
-        if pipeline.get("phase") in ("building", "testing", "closing", "git_push"):
-            pipeline["phase"] = "idle"
-            pipeline["active_agent"] = ""
-            pipeline["updated_at"] = datetime.now().isoformat()
-            state["pipeline"] = pipeline
     save_state(state)
 
 
@@ -98,6 +91,7 @@ def set_pipeline_status(
 ) -> None:
     """Track sprint pipeline phase for UI telemetry (pickup → build → test → close → git)."""
     state = load_state()
+    prev = state.get("pipeline") or {}
     state["pipeline"] = {
         "phase": phase,
         "task_id": task_id,
@@ -106,10 +100,56 @@ def set_pipeline_status(
         "message": message,
         "progress_pct": PHASE_PROGRESS.get(phase, 0),
         "updated_at": datetime.now().isoformat(),
+        "completed_steps": prev.get("completed_steps", []),
     }
+    if phase == "testing" and prev.get("test_started_at"):
+        state["pipeline"]["test_started_at"] = prev["test_started_at"]
+        state["pipeline"]["test_subphase"] = prev.get("test_subphase", "starting")
+    elif phase != "testing":
+        state["pipeline"].pop("test_started_at", None)
+        state["pipeline"].pop("test_subphase", None)
     save_state(state)
     if task_id and phase not in ("idle",):
         update_queue_progress(task_id, phase, active_agent, message)
+
+
+def mark_pipeline_step_complete(step: str) -> None:
+    """Record a gated pipeline step as successfully completed (Task 37 step gates)."""
+    state = load_state()
+    pipeline = state.get("pipeline") or {}
+    steps = list(pipeline.get("completed_steps") or [])
+    if step not in steps:
+        steps.append(step)
+    pipeline["completed_steps"] = steps
+    state["pipeline"] = pipeline
+    save_state(state)
+
+
+def reset_pipeline_steps(task_id: str = "", task_title: str = "") -> None:
+    """Clear completed step markers when a new pickup cycle starts."""
+    state = load_state()
+    pipeline = state.get("pipeline") or {}
+    pipeline["completed_steps"] = []
+    if task_id:
+        pipeline["task_id"] = task_id
+    if task_title:
+        pipeline["task_title"] = task_title
+    state["pipeline"] = pipeline
+    save_state(state)
+
+
+def rewind_pipeline_to_step(keep_through: str = "pickup") -> None:
+    """Remove completed steps after a gate failure (e.g. test fail → rewind to pickup only)."""
+    order = ["pickup", "building", "testing", "closing", "git_push", "done"]
+    if keep_through not in order:
+        return
+    keep_idx = order.index(keep_through)
+    state = load_state()
+    pipeline = state.get("pipeline") or {}
+    steps = pipeline.get("completed_steps") or []
+    pipeline["completed_steps"] = [s for s in steps if s in order[: keep_idx + 1]]
+    state["pipeline"] = pipeline
+    save_state(state)
 
 
 def get_pipeline_status() -> dict:
@@ -128,12 +168,60 @@ PHASE_PROGRESS = {
     "idle": 0,
     "pickup": 15,
     "building": 40,
+    "retry": 50,
     "testing": 65,
     "closing": 85,
     "git_push": 95,
     "done": 100,
     "failed": 0,
 }
+
+TEST_SUBPHASE_PROGRESS = {
+    "starting": 65,
+    "sprint_cases": 67,
+    "unit": 70,
+    "browser": 78,
+    "excel": 83,
+    "done": 84,
+}
+
+
+def update_test_progress(
+    subphase: str,
+    message: str,
+    task_id: str = "",
+    task_title: str = "",
+) -> None:
+    """Heartbeat during long Test runs — UI shows sub-phase + elapsed time."""
+    state = load_state()
+    pipeline = dict(state.get("pipeline") or {})
+    if not pipeline.get("test_started_at"):
+        pipeline["test_started_at"] = datetime.now().isoformat()
+    pipeline["phase"] = "testing"
+    pipeline["test_subphase"] = subphase
+    pipeline["active_agent"] = "tester"
+    pipeline["message"] = message
+    pipeline["progress_pct"] = TEST_SUBPHASE_PROGRESS.get(subphase, PHASE_PROGRESS["testing"])
+    pipeline["updated_at"] = datetime.now().isoformat()
+    if task_id:
+        pipeline["task_id"] = task_id
+    if task_title:
+        pipeline["task_title"] = task_title
+    state["pipeline"] = pipeline
+    save_state(state)
+    tid = pipeline.get("task_id") or task_id
+    if tid:
+        update_queue_progress(tid, "testing", "tester", message)
+
+
+def clear_test_progress() -> None:
+    """Clear test heartbeat fields when Test gate finishes."""
+    state = load_state()
+    pipeline = dict(state.get("pipeline") or {})
+    pipeline.pop("test_subphase", None)
+    pipeline.pop("test_started_at", None)
+    state["pipeline"] = pipeline
+    save_state(state)
 
 
 def _empty_task_queue() -> dict:
@@ -246,14 +334,17 @@ def complete_queue_task(task_id: str, task_title: str, duration_seconds: float =
     _save_task_queue(queue)
 
 
-def fail_queue_task(task_id: str, task_title: str, reason: str = "") -> None:
+def fail_queue_task(task_id: str, task_title: str, reason: str = "", attempts: int = 0, max_attempts: int = 0) -> None:
     queue = get_task_queue()
     entry = {
         "id": task_id,
         "title": task_title,
         "failed_at": datetime.now().isoformat(),
         "reason": reason[:300],
-        "progress_pct": (queue.get("active") or {}).get("progress_pct", 0),
+        "progress_pct": 0,
+        "phase": "failed",
+        "attempts": attempts,
+        "max_attempts": max_attempts,
     }
     queue["failed"] = ([entry] + [t for t in queue.get("failed", []) if t.get("id") != task_id])[:20]
     queue["pending"] = [t for t in queue.get("pending", []) if t.get("id") != task_id]
@@ -331,16 +422,26 @@ def _scan_agent_pids() -> dict:
     return agent_pids
 
 
+def _fleet_is_online(agent_pids: dict) -> bool:
+    """True when sprint watcher or orchestrator process is alive (fleet supervisor up)."""
+    return bool(agent_pids.get("sprint_watcher") or agent_pids.get("orchestrator"))
+
+
 def get_dynamic_agent_statuses() -> dict:
     state = load_state()
     agent_pids = _scan_agent_pids()
     agents_meta = state.get("agents", {})
+    fleet_online = _fleet_is_online(agent_pids)
+    listening_agents = {"orchestrator", "builder", "tester", "git_agent", "memory"}
     statuses = {}
     for name in ["sprint_watcher", "orchestrator", "builder", "tester", "git_agent", "memory"]:
         meta = agents_meta.get(name, {})
         pid = agent_pids.get(name)
         is_active = pid is not None
         if is_active:
+            status = "running"
+        elif fleet_online and name in listening_agents:
+            # Idle-but-listening agents count as online when the fleet supervisor is up
             status = "running"
         else:
             status = meta.get("status", "idle")

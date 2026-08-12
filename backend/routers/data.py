@@ -11,13 +11,17 @@ router = APIRouter()
 
 @router.post("/upload")
 async def upload_csv(file: UploadFile = File(...)):
-    """Upload a CSV file and load it into memory."""
-    if not file.filename.endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV files are supported")
+    """Upload a CSV or Excel file and load it into memory."""
+    fname = (file.filename or "").lower()
+    if not fname.endswith((".csv", ".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported")
 
     content = await file.read()
     try:
-        df = data_service.load_from_csv_bytes(content)
+        if fname.endswith(".csv"):
+            df = data_service.load_from_csv_bytes(content)
+        else:
+            df = data_service.load_from_excel_bytes(content)
         return JSONResponse({
             "message": f"✅ Uploaded '{file.filename}' successfully",
             "rows": len(df),
@@ -25,7 +29,7 @@ async def upload_csv(file: UploadFile = File(...)):
             "column_names": df.columns.tolist()
         })
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Failed to parse CSV: {str(e)}")
+        raise HTTPException(status_code=422, detail=f"Failed to parse file: {str(e)}")
 
 
 @router.get("/sample")

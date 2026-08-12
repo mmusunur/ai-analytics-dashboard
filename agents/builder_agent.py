@@ -20,7 +20,7 @@ import utf8_fix
 from memory_manager import update_agent_status, log_task_result
 from builder_nlp import classify_task_intent_and_intent_map
 from builder_llm import apply_intent_fixes
-from builder_helpers import build_navbar, build_warehouse_analytics, build_dynamic_component
+from builder_helpers import build_navbar, build_warehouse_analytics, build_dynamic_component, build_data_analytics
 from builder_rules import apply_rule_based_fixes, _load_task_spec_context
 
 console = Console(legacy_windows=False)
@@ -59,7 +59,14 @@ def run_builder_test_verification() -> bool:
         return True
 
 
-def handle_task(task_id: str, task_title: str, description: str, priority: str) -> bool:
+def handle_task(
+    task_id: str,
+    task_title: str,
+    description: str,
+    priority: str,
+    attempt: int = 1,
+    retry_context_file: str = "",
+) -> bool:
     """
     Autonomous task handler:
     1. Classifies intent from task title + description using NLP/LLM.
@@ -70,16 +77,30 @@ def handle_task(task_id: str, task_title: str, description: str, priority: str) 
     Returns False if no files were modified (task left In Progress for manual review).
     """
     update_agent_status("builder", "running", f"Building #{task_id}: {task_title}")
+    retry_note = f"\nRetry attempt: {attempt}" if attempt > 1 else ""
     console.print(Panel.fit(
         f"[bold cyan]Builder Agent — Real Implementation[/bold cyan]\n"
         f"Task: {task_title}\n"
         f"ID: {task_id}\n"
-        f"Priority: {priority.upper()}",
+        f"Priority: {priority.upper()}{retry_note}",
         border_style="cyan"
     ))
 
-    # Step 1: Classify intent
-    intent_result = classify_task_intent_and_intent_map(task_title, description)
+    if attempt > 1 and retry_context_file:
+        ctx_path = Path(retry_context_file)
+        if ctx_path.exists():
+            failure_ctx = ctx_path.read_text(encoding="utf-8", errors="replace")[:4000]
+            description = (
+                f"{description}\n\n"
+                f"=== PREVIOUS TEST RUN FAILED (attempt {attempt - 1}) — FIX THESE ISSUES ===\n"
+                f"{failure_ctx}\n"
+                f"=== END FAILURE OUTPUT — implement fixes and ensure all tests pass ==="
+            )
+            console.print(f"[yellow]↻ Retry build with prior test failure context ({len(failure_ctx)} chars)[/yellow]")
+
+    # Step 1: Classify intent (strip retry failure blobs so NLP stays on-task)
+    clean_desc = (description or "").split("=== PREVIOUS TEST")[0].strip()
+    intent_result = classify_task_intent_and_intent_map(task_title, clean_desc)
     intents = intent_result["intents"]
     console.print(f"[cyan]Detected intents: {intents}[/cyan]")
     if intent_result.get("target_files"):
@@ -107,9 +128,25 @@ def handle_task(task_id: str, task_title: str, description: str, priority: str) 
 
     # Step 3: Snapshot all target files before any LLM changes (for rollback on test failure)
     file_backups: dict = {}
+    dynamic_paths: list = []
+
+    def _snapshot(path: Path):
+        key = str(path)
+        if path.exists():
+            file_backups[key] = path.read_text(encoding="utf-8")
+        else:
+            file_backups[key] = None
+
     for fkey, fpath in CODEBASE_MAP.items():
-        if fpath.exists():
-            file_backups[str(fpath)] = fpath.read_text(encoding="utf-8")
+        _snapshot(fpath)
+
+    for rel in intent_result.get("target_files") or []:
+        p = ROOT_DIR / rel.replace("/", os.sep)
+        if p.is_file():
+            _snapshot(p)
+        elif p.suffix == ".jsx" or rel.endswith(".jsx"):
+            dynamic_paths.append(p)
+            _snapshot(p)
 
     # Apply LLM code changes to target files
     modified_files = apply_intent_fixes(ROOT_DIR, CODEBASE_MAP, task_title, description, intents)
@@ -145,10 +182,24 @@ def handle_task(task_id: str, task_title: str, description: str, priority: str) 
         for modified_name in modified_files:
             if modified_name == "already_applied":
                 continue
-            for fkey, fpath in CODEBASE_MAP.items():
-                if fpath.name == modified_name and str(fpath) in file_backups:
-                    fpath.write_text(file_backups[str(fpath)], encoding="utf-8")
+            candidates = list(ROOT_DIR.rglob(modified_name))
+            if not candidates:
+                candidates = [ROOT_DIR / modified_name]
+            for fpath in candidates:
+                if not fpath.is_file():
+                    continue
+                key = str(fpath)
+                backup = file_backups.get(key)
+                if backup is None and fpath.exists():
+                    try:
+                        fpath.unlink()
+                        rolled_back.append(f"deleted:{modified_name}")
+                    except OSError:
+                        pass
+                elif backup is not None:
+                    fpath.write_text(backup, encoding="utf-8")
                     rolled_back.append(modified_name)
+                break
         console.print(f"[yellow]Rolled back files: {rolled_back}[/yellow]")
 
     update_agent_status("builder", "idle", "Autonomous Builder Agent Active (Listening for tasks)")
@@ -162,7 +213,12 @@ if __name__ == "__main__":
     parser.add_argument("--task-title", required=True)
     parser.add_argument("--description", default="")
     parser.add_argument("--priority", default="medium")
+    parser.add_argument("--attempt", type=int, default=1)
+    parser.add_argument("--retry-context-file", default="")
     args = parser.parse_args()
 
-    success = handle_task(args.task_id, args.task_title, args.description, args.priority)
+    success = handle_task(
+        args.task_id, args.task_title, args.description, args.priority,
+        attempt=args.attempt, retry_context_file=args.retry_context_file,
+    )
     sys.exit(0 if success else 1)

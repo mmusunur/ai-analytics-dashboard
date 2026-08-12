@@ -18,6 +18,40 @@ ROOT_DIR = Path(__file__).parent.parent
 GITHUB_REPO = os.getenv("GITHUB_REPO", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
+# Repo layout — paths the sprint Git Agent MUST commit after task close (Task 7 + Task 38)
+REPO_MEANINGFUL_PREFIXES = (
+    "agents/",
+    "backend/",
+    "frontend/src/",
+    "frontend/public/",
+    "scripts/",
+    "tasks/",
+    "tests/",
+    "config/",
+    "docs/",
+    "mcp_servers/",
+)
+REPO_MEANINGFUL_ROOT_FILES = (
+    "tasks.md",
+    "README.md",
+    "pyproject.toml",
+    "requirements.txt",
+    ".env.example",
+    "package-lock.json",
+)
+REPO_MEANINGFUL_GLOBS = (
+    "AI_Analytics_Dashboard_Presentation.pptx",
+    "AI_Agents_and_MCP_Presentation.pptx",
+)
+# Runtime / noisy — never commit from sprint pipeline
+REPO_IGNORE_PATTERNS = (
+    ".log", ".system_generated", "__pycache__", ".pytest_cache",
+    "brain/", ".tmp", "logs/", "reports/",
+    "memory/agent_state.json", "memory/.processed_task_ids.json",
+    "memory/.retry_context_", "memory/task_history/",
+    "node_modules/", ".env",  # secrets / deps
+)
+
 
 def _run_git(command: list[str], cwd: Path = ROOT_DIR) -> tuple[str, str, int]:
     """Run a git command and return (stdout, stderr, returncode)."""
@@ -81,28 +115,98 @@ def get_changed_files() -> list[str]:
     return files
 
 
+def is_meaningful_repo_path(filepath: str) -> bool:
+    """True if path is eligible for sprint-agent commit (source, docs, tests — not runtime memory)."""
+    normalized = filepath.replace("\\", "/")
+    lower = normalized.lower()
+    if any(pat in lower for pat in REPO_IGNORE_PATTERNS):
+        return False
+    base = normalized.split("/")[-1]
+    if base in REPO_MEANINGFUL_ROOT_FILES or base in REPO_MEANINGFUL_GLOBS:
+        return True
+    return any(normalized.startswith(prefix) for prefix in REPO_MEANINGFUL_PREFIXES)
+
+
 def get_meaningful_changed_files() -> list[str]:
     """
-    Get list of meaningful changed source code/documentation files.
-    Filters out log files, system cache, temporary files, and noisy state logs
-    to prevent unnecessary spam commits.
+    Meaningful changed files per repo folder structure.
+    Uses allowlist (agents/, backend/, frontend/src/, tasks/, tests/, …) and
+    excludes runtime memory, caches, logs, and .env secrets.
     """
-    raw_files = get_changed_files()
     meaningful = []
-    
-    # Exclude temporary, cache, log, and noisy state files
-    ignored_patterns = (
-        ".log", ".system_generated", "__pycache__", ".pytest_cache",
-        "brain/", ".tmp", "task-", "logs/"
-    )
-    
-    for f in raw_files:
-        normalized = f.replace("\\", "/").lower()
-        if any(pat in normalized for pat in ignored_patterns):
-            continue
-        meaningful.append(f)
-        
+    for f in get_changed_files():
+        if is_meaningful_repo_path(f):
+            meaningful.append(f)
     return meaningful
+
+
+def stage_meaningful_files(files: list[str]) -> bool:
+    """Stage only meaningful paths (not blind git add .)."""
+    if not files:
+        return True
+    for f in files:
+        _, stderr, code = _run_git(["add", "--", f])
+        if code != 0:
+            console.print(f"[red]❌ Git add failed for {f}: {stderr}[/red]")
+            return False
+    console.print(f"[cyan]📦 Staged {len(files)} meaningful file(s)[/cyan]")
+    return True
+
+
+def commit_and_push_for_task(task_title: str, task_id: str = "") -> dict:
+    """
+    Sprint pipeline Git gate — commit + push meaningful repo files for a closed task.
+    Returns {ok, committed, pushed, files, message}.
+    """
+    init_repo()
+    meaningful = get_meaningful_changed_files()
+    unpushed = get_unpushed_commits()
+
+    if not meaningful and not unpushed:
+        return {
+            "ok": True,
+            "committed": False,
+            "pushed": False,
+            "files": [],
+            "message": "No meaningful repo changes — git gate skipped (clean)",
+        }
+
+    committed = False
+    if meaningful:
+        if not stage_meaningful_files(meaningful):
+            return {"ok": False, "committed": False, "pushed": False, "files": meaningful, "message": "git add failed"}
+        summary = f"Sprint task: {task_title}" if task_title else "Sprint agent commit"
+        message = generate_commit_message(
+            tasks_completed=[f"{task_title} ({task_id[:8]})"] if task_title else None,
+            files_changed=meaningful,
+            custom_summary=summary,
+        )
+        if not commit(message):
+            return {"ok": False, "committed": False, "pushed": False, "files": meaningful, "message": "git commit failed"}
+        committed = True
+
+    pushed = False
+    if GITHUB_REPO:
+        pushed = push()
+        if not pushed:
+            return {
+                "ok": False,
+                "committed": committed,
+                "pushed": False,
+                "files": meaningful,
+                "message": "git push failed — check GITHUB_TOKEN / GITHUB_REPO",
+            }
+    else:
+        console.print("[yellow]⚠️  No GITHUB_REPO — commit saved locally only[/yellow]")
+        pushed = True  # local-only is acceptable for gate
+
+    return {
+        "ok": True,
+        "committed": committed,
+        "pushed": pushed,
+        "files": meaningful,
+        "message": f"Committed {len(meaningful)} file(s)" if meaningful else "Pushed existing commits",
+    }
 
 
 def stage_all() -> bool:

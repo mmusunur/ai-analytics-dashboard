@@ -56,7 +56,7 @@ export default function Sidebar({ collapsed, onToggle, onHide }) {
         })
     }
     fetchStatus()
-    const timer = setInterval(fetchStatus, 4000)
+    const timer = setInterval(fetchStatus, 10000)
     return () => {
       cancelled = true
       clearInterval(timer)

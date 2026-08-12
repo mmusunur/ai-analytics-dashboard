@@ -15,15 +15,19 @@ This task specification governs the **Full Automated Testing Suite** (Pytest Uni
   - `test_charts.py` — KPI cards, Bar chart, Scatter plot, Heatmaps
   - `test_core_components.py` — Navbar, Warehouse Analytics components
   - `test_data_endpoints.py` — CSV ingestion, Health check, Summary stats
-  - `test_task19_20_copilot_date_rules.py` — Date-agnostic Copilot & Date-strict Dashboard rules
+  - `test_task19_20_copilot_date_rules.py` — Dual search rules: Copilot no-date (Task 36 Mode 2) & Global dated dashboard (Task 36 Mode 1)
+  - `test_comprehensive_module_suite.py` — TC-COMP-01…11 per-screen browser verification (Task 35)
   - `test_warehouse_db_filters.py` — PostgreSQL parameters & schema integrity
 
   - `test_sprints.py` — Sprint board API, agent status, pickup group rules, watcher behavior
 
 ### 2. Playwright Browser E2E Suite (`tests/browser/`)
 - **Execution Command:** `python -m pytest tests/browser/ -v --tb=short`
-- **Total Test Cases:** 39 Interactive Browser Tests
+- **Total Test Cases:** 57+ Interactive Browser Tests (incl. TC-COMP-01…11 from Task 35)
 - **Prerequisite:** Application servers must be running (`:8000` + `:5173`). Auto-started by `tester_agent.py` via `scripts/server_health.py`.
+- **Dual Search Validation (Task 36):**
+  - TC-06: Copilot POST must send `oerdte=""`
+  - TC-COMP-11: Global Submit must send dated KPI API params
 - **Key Flow Validations:**
   - Default date auto-application on page load (`#global-date-picker`)
   - KPI card real number rendering

@@ -128,6 +128,12 @@ def apply_rule_based_fixes(root_dir: Path, task_title: str, description: str, in
                     if _write_if_changed(path, new_content):
                         modified.append(agent_file)
 
+    if "DATA_ANALYTICS_ML" in intents or re.search(r"\bdata analytics\b", text):
+        from builder_helpers import build_data_analytics
+        modified.extend(build_data_analytics(root_dir))
+        if modified:
+            return modified
+
     # General fallback: scaffold a component + unit test when nothing else matched
     if not modified:
         from builder_helpers import build_dynamic_component

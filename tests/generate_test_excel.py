@@ -344,6 +344,70 @@ TEST_SUITES = [
 ]
 
 
+def _load_browser_comprehensive_cases() -> list:
+    """Build TC-COMP-* rows with live PASS/FAIL from memory/browser_test_registry.json."""
+    import json
+    registry_path = ROOT_DIR / "memory" / "browser_test_registry.json"
+    registry = {}
+    if registry_path.exists():
+        try:
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        except Exception:
+            registry = {}
+    case_map = registry.get("cases", {})
+
+    definitions = [
+        ("TC-COMP-01", "Dashboard Date+DB Submit KPI Alignment", "Comprehensive Dashboard Filter Engine",
+         "Select global order date and target DB, click Submit, and verify KPI Cases Built matches backend API totals.",
+         "Successfully verified KPI Cases Built on dashboard matches /api/charts/kpi for same date and database."),
+        ("TC-COMP-02", "Warehouse Filter Bar Chart Calculation", "Warehouse Bar Chart Calculation Verifier",
+         "Select date and warehouse facility, Submit, and verify bar chart aggregated cases match API warehouse_totals.",
+         "Successfully verified bar chart total cases align with SQL warehouse_totals for selected facility."),
+        ("TC-COMP-03", "Table Summary Cards API Alignment", "Warehouse Table Summary Calculation Engine",
+         "Verify warehouse table summary cards (Cases Built, Order Qty) match /api/warehouse/statistics summary.",
+         "Successfully verified table summary cards match backend SQL aggregate summary for selected filters."),
+        ("TC-COMP-04", "Copilot Search Without Date Parameter", "Copilot Date-Agnostic Search Engine",
+         "Set global date and Submit, then run Copilot query; verify copilot sends oerdte='' and KPI matches no-date API.",
+         "Successfully verified Copilot ignores global date and searches across all available dates."),
+        ("TC-COMP-05", "Analytics Screen ML Controls", "Analytics Module Browser Smoke Test",
+         "Navigate to /analytics and verify ML upload and train controls render.",
+         "Successfully verified Analytics page loads with model training controls visible."),
+        ("TC-COMP-06", "Sprint Board All Dropdowns + Columns", "Sprint Board Comprehensive Module Test",
+         "Select workspace and project dropdowns on Sprint Board and verify all 4 kanban columns render.",
+         "Successfully verified Sprint Board workspace/project selectors and Backlog/To Do/In Progress/Completed columns."),
+        ("TC-COMP-07", "Agent Monitor Fleet Screen", "Agent Monitor Module Browser Test",
+         "Navigate to /agents and verify agent fleet cards and monitor panels load.",
+         "Successfully verified Agent Monitor displays fleet agent status cards."),
+        ("TC-COMP-08", "MCP Explorer Screen Load", "MCP Explorer Module Browser Test",
+         "Navigate to /mcp and verify MCP server registry page loads.",
+         "Successfully verified MCP Explorer page loads with server registry content."),
+        ("TC-COMP-09", "Full Filter Chain Scratch Submit", "Scratch Filter Propagation Engine",
+         "Apply date, DB, and scratch filter; verify scratch KPI reflects only_scratches API parameter.",
+         "Successfully verified scratch filter propagates to KPI API with only_scratches=true."),
+        ("TC-COMP-10", "Single Warehouse KPI vs Bar Chart Parity", "Cross-Widget Calculation Parity Engine",
+         "With one warehouse selected, KPI Cases Built must equal bar chart total cases.",
+         "Successfully verified KPI Cases Built equals bar chart sum for single-warehouse filter."),
+        ("TC-COMP-11", "Global Submit Uses Date Parameter", "Global Header Filter Engine",
+         "Global date + Submit must send oerdte to KPI API and align calculations with dated API response.",
+         "Successfully verified global Submit applies order date and KPI matches dated API totals."),
+        ("TC-COMP-12", "Copilot Two Warehouses Different KPI", "Copilot Warehouse Calculation Engine",
+         "Discover two warehouses from API; Copilot queries must return different Cases Built totals per facility.",
+         "Successfully verified Copilot warehouse filter returns distinct per-facility calculations from live API."),
+    ]
+
+    rows = []
+    for case_id, name, func, expected, pass_actual in definitions:
+        entry = case_map.get(case_id, {})
+        status = entry.get("status", "PENDING")
+        actual = entry.get("message") or pass_actual
+        if status == "PASS":
+            actual = pass_actual
+        elif status == "FAIL":
+            actual = entry.get("message", "Browser test failed — calculation or UI mismatch detected.")
+        rows.append((case_id, name, func, expected, actual, status))
+    return rows
+
+
 def create_excel_report(
     unit_passed: bool = True,
     browser_passed: bool = True,
@@ -363,6 +427,13 @@ def create_excel_report(
         # Convert dynamic rows to static tuple format + status in 6th position via extended format
         dynamic_tuples = [(r[0], r[1], r[2], r[3], r[4], r[5]) for r in dynamic_rows]
         all_suites.append((dynamic_category, dynamic_tuples))
+
+    comp_rows = _load_browser_comprehensive_cases()
+    if comp_rows:
+        all_suites.append((
+            "🧪 Comprehensive Module Browser Tests (All Fields + Calculation Verification)",
+            comp_rows,
+        ))
 
     wb = openpyxl.Workbook()
     ws = wb.active

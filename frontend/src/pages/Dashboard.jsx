@@ -5,6 +5,7 @@ import KPICard from '../components/KPICard'
 import WarehouseSalesAnalytics from '../components/WarehouseSalesAnalytics'
 import AiDataCopilot from '../components/AiDataCopilot'
 import AnomalyAlertPanel from '../components/AnomalyAlertPanel'
+import DataAnalytics from '../components/DataAnalytics'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ScatterChart, Scatter, Cell
@@ -79,8 +80,11 @@ export default function Dashboard() {
     copilotActiveRef.current = copilotFilterActive
   }, [copilotFilterActive])
 
+  // ── Global warehouse (header selector — NOT copilot) ──
+  const [globalWhse, setGlobalWhse] = useState('')
+
   const handleApplyTableFilter = (filters) => {
-    const nextFilters = { ...(tableFiltersRef.current || {}), ...filters, _ts: Date.now() };
+    const nextFilters = { ...filters, effectiveDate: '', _ts: Date.now() };
     tableFiltersRef.current = nextFilters;
     copilotActiveRef.current = true;
     setTableFilters(nextFilters);
@@ -92,17 +96,30 @@ export default function Dashboard() {
   const [barData, setBarData] = useState([])
   const [scatterData, setScatterData] = useState([])
 
-  const fetchAll = (dateVal, dbVal, filterParams = null, forceCopilot = false) => {
-    const currentFilters = filterParams !== null ? filterParams : (tableFilters || tableFiltersRef.current || {});
-    const whseVal = currentFilters.whse || currentFilters.oewhse || currentFilters.whs_num || currentFilters.filtered_whse || '';
-    const batchVal = currentFilters.batch || currentFilters.batch_id || currentFilters.filtered_batch || '';
-    const invVal = currentFilters.invoice || currentFilters.oeinv || currentFilters.filtered_invoice || '';
-    const scratchesVal = Boolean(currentFilters.onlyScratches || currentFilters.filter_scratch);
+  const fetchAll = (dateVal, dbVal, filterParams = null, copilotMode = null) => {
+    const isCopilot = copilotMode !== null ? copilotMode : copilotActiveRef.current;
+    const currentFilters = filterParams !== null ? filterParams : (tableFiltersRef.current || {});
 
-    const hasFilter = Boolean(whseVal || batchVal || invVal || scratchesVal);
-    const isCopilot = forceCopilot || copilotFilterActive || copilotActiveRef.current || hasFilter;
-    const effectiveDateVal = isCopilot ? '' : dateVal;
-    const oerdte = effectiveDateVal ? toOerdte(effectiveDateVal) : '';
+    let whseVal = '';
+    let batchVal = '';
+    let invVal = '';
+    let scratchesVal = false;
+    let oerdte = '';
+
+    if (isCopilot) {
+      // Copilot search: no date — query whatever the user asked across all dates
+      whseVal = currentFilters.whse || currentFilters.oewhse || currentFilters.whs_num || currentFilters.filtered_whse || '';
+      batchVal = currentFilters.batch || currentFilters.batch_id || currentFilters.filtered_batch || '';
+      invVal = currentFilters.invoice || currentFilters.oeinv || currentFilters.filtered_invoice || '';
+      scratchesVal = Boolean(currentFilters.onlyScratches || currentFilters.filter_scratch);
+      oerdte = '';
+    } else {
+      // Global header: date + DB + optional warehouse
+      whseVal = (filterParams && filterParams.whse !== undefined)
+        ? filterParams.whse
+        : globalWhse;
+      oerdte = dateVal ? toOerdte(dateVal) : '';
+    }
 
     let queryParams = `oerdte=${oerdte}&target_db=${dbVal}`;
     if (whseVal) queryParams += `&oewhse=${encodeURIComponent(whseVal)}`;
@@ -131,20 +148,32 @@ export default function Dashboard() {
 
   // Initial fetch and on submission or filter change
   useEffect(() => {
-    fetchAll(appliedDate, appliedTargetDb, tableFiltersRef.current)
-    const timer = setInterval(() => fetchAll(appliedDate, appliedTargetDb, tableFiltersRef.current), 15000)
+    if (copilotFilterActive) {
+      fetchAll(appliedDate, appliedTargetDb, tableFiltersRef.current, true)
+    } else {
+      fetchAll(appliedDate, appliedTargetDb, { whse: globalWhse }, false)
+    }
+    const timer = setInterval(() => {
+      if (copilotActiveRef.current) {
+        fetchAll(appliedDate, appliedTargetDb, tableFiltersRef.current, true)
+      } else {
+        fetchAll(appliedDate, appliedTargetDb, { whse: globalWhse }, false)
+      }
+    }, 15000)
     return () => clearInterval(timer)
-  }, [appliedDate, appliedTargetDb, tableFilters, copilotFilterActive])
+  }, [appliedDate, appliedTargetDb, globalWhse, tableFilters, copilotFilterActive])
 
 
   const handleSubmit = (e) => {
     if (e) e.preventDefault()
-    // When user manually submits date — deactivate Copilot filter so date is respected
+    // Global Submit — deactivate copilot and apply date + DB + warehouse
     setCopilotFilterActive(false)
     setTableFilters(null)
+    tableFiltersRef.current = null
+    copilotActiveRef.current = false
     setAppliedDate(selectedDate)
     setAppliedTargetDb(selectedDb)
-    fetchAll(selectedDate, selectedDb)
+    fetchAll(selectedDate, selectedDb, { whse: globalWhse }, false)
   }
 
   return (
@@ -189,14 +218,14 @@ export default function Dashboard() {
             <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>Selected Whse:</span>
             <select
               id="global-whse-selector"
-              value={(tableFilters?.whse || tableFilters?.oewhse || tableFilters?.whs_num || '').toString()}
+              value={copilotFilterActive
+                ? (tableFilters?.whse || tableFilters?.oewhse || tableFilters?.whs_num || '').toString()
+                : globalWhse}
               onChange={(e) => {
                 const val = e.target.value;
-                if (val) {
-                  handleApplyTableFilter({ whse: val });
-                } else {
-                  handleApplyTableFilter({ whse: '' });
-                }
+                if (copilotFilterActive) return;
+                setGlobalWhse(val);
+                fetchAll(appliedDate, appliedTargetDb, { whse: val }, false);
               }}
               style={{
                 background: 'var(--bg-secondary)',
@@ -211,14 +240,16 @@ export default function Dashboard() {
             >
               <option value="">All Warehouses</option>
               {(() => {
-                const defaultWhs = ['01', '02', '03', '08', '27', '58', '61', '71'];
-                const whsSet = new Set(defaultWhs);
+                const whsSet = new Set();
                 (barData || []).forEach(b => {
-                  const w = (b.whs_num || '').toString().trim();
+                  const w = (b.whs_num || b.label || '').toString().replace(/^WHS\s*/i, '').trim();
                   if (w) whsSet.add(w);
                 });
-                const currentVal = (tableFilters?.whse || tableFilters?.oewhse || tableFilters?.whs_num || '').toString().trim();
-                if (currentVal) whsSet.add(currentVal);
+                if (globalWhse) whsSet.add(globalWhse);
+                if (copilotFilterActive) {
+                  const cw = (tableFilters?.whse || tableFilters?.oewhse || tableFilters?.whs_num || '').toString().trim();
+                  if (cw) whsSet.add(cw);
+                }
                 const sorted = Array.from(whsSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
                 return sorted.map(w => (
                   <option key={w} value={w}>Whse {w}</option>
@@ -273,14 +304,17 @@ export default function Dashboard() {
             Submit
           </button>
 
-          {Boolean(tableFilters?.whse || tableFilters?.oewhse || tableFilters?.whs_num || tableFilters?.batch || tableFilters?.invoice || tableFilters?.onlyScratches || copilotFilterActive) && (
+          {Boolean(tableFilters?.whse || tableFilters?.oewhse || tableFilters?.whs_num || tableFilters?.batch || tableFilters?.invoice || tableFilters?.onlyScratches || copilotFilterActive || (!copilotFilterActive && globalWhse)) && (
             <button
               type="button"
               id="header-clear-filter-btn"
               onClick={() => {
+                setGlobalWhse('');
                 setCopilotFilterActive(false);
                 setTableFilters(null);
-                fetchAll(appliedDate, appliedTargetDb, {}, false);
+                tableFiltersRef.current = null;
+                copilotActiveRef.current = false;
+                fetchAll(appliedDate, appliedTargetDb, { whse: '' }, false);
               }}
               style={{
                 background: 'rgba(239, 68, 68, 0.15)',
@@ -311,7 +345,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Active Warehouse & Filter Synchronizer Banner ── */}
-      {Boolean(tableFilters?.whse || tableFilters?.oewhse || tableFilters?.batch || tableFilters?.invoice || tableFilters?.onlyScratches) && (
+      {Boolean(tableFilters?.whse || tableFilters?.oewhse || tableFilters?.batch || tableFilters?.invoice || tableFilters?.onlyScratches || (!copilotFilterActive && globalWhse)) && (
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px',
           background: 'linear-gradient(135deg, rgba(52,211,153,0.12) 0%, rgba(16,185,129,0.06) 100%)',
@@ -321,6 +355,11 @@ export default function Dashboard() {
             <span style={{ fontSize: '12px', fontWeight: 700, color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px' }}>
               ⚡ Active Page Filters:
             </span>
+            {(!copilotFilterActive && globalWhse) && (
+              <span style={{ fontSize: '12px', fontWeight: 700, background: 'rgba(52,211,153,0.2)', color: '#6ee7b7', padding: '3px 10px', borderRadius: '6px', border: '1px solid rgba(52,211,153,0.5)' }}>
+                🏢 Global Warehouse: Whse {globalWhse}
+              </span>
+            )}
             {(tableFilters?.whse || tableFilters?.oewhse || tableFilters?.whs_num) && (
               <span style={{ fontSize: '12px', fontWeight: 700, background: 'rgba(52,211,153,0.2)', color: '#6ee7b7', padding: '3px 10px', borderRadius: '6px', border: '1px solid rgba(52,211,153,0.5)' }}>
                 🏢 Warehouse: Whse {(tableFilters?.whse || tableFilters?.oewhse || tableFilters?.whs_num)}
@@ -345,9 +384,12 @@ export default function Dashboard() {
           <button
             type="button"
             onClick={() => {
+              setGlobalWhse('');
               setCopilotFilterActive(false);
               setTableFilters(null);
-              fetchAll(appliedDate, appliedTargetDb, {}, false);
+              tableFiltersRef.current = null;
+              copilotActiveRef.current = false;
+              fetchAll(appliedDate, appliedTargetDb, { whse: '' }, false);
             }}
             style={{
               background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)',
@@ -369,18 +411,23 @@ export default function Dashboard() {
         onClearFilter={() => {
           setCopilotFilterActive(false)
           setTableFilters(null)
-          fetchAll(appliedDate, appliedTargetDb, {}, false)
+          tableFiltersRef.current = null
+          copilotActiveRef.current = false
+          fetchAll(appliedDate, appliedTargetDb, { whse: globalWhse }, false)
         }}
         copilotFilterActive={copilotFilterActive}
       />
 
       {/* ── Real-Time Anomaly & Risk Alerts Feature ── */}
       <AnomalyAlertPanel
-        globalDate={copilotFilterActive ? '' : appliedDate}
+        globalDate={appliedDate}
         globalTargetDb={appliedTargetDb}
         selectedWhse={tableFilters?.whse || tableFilters?.whs_num || ''}
         onApplyFilter={handleApplyTableFilter}
       />
+
+      {/* ── Data Analytics — CSV/Excel upload + ML training on dashboard ── */}
+      <DataAnalytics />
 
       {/* ── Warehouse Level KPI Grid ── */}
       <div className="kpi-grid" style={{ marginTop: '24px' }}>
@@ -452,9 +499,9 @@ export default function Dashboard() {
 
       {/* ── Warehouse Sales & Invoice Analytics — receives global date, db & external filters ── */}
       <WarehouseSalesAnalytics
-        globalDate={appliedDate}
+        globalDate={copilotFilterActive ? '' : appliedDate}
         globalTargetDb={appliedTargetDb}
-        externalFilters={tableFilters}
+        externalFilters={copilotFilterActive ? tableFilters : (globalWhse ? { whse: globalWhse } : null)}
         copilotFilterActive={copilotFilterActive}
       />
 

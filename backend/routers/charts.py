@@ -61,8 +61,10 @@ def get_kpi(
     total_invoices = summary.get("total_invoices_processed", 0)
     fulfillment = summary.get("procurement_fulfillment_rate", "0%")
 
-    scratch_qty = total_order - total_built if total_order > total_built else 0
-    scratch_rate = f"{(scratch_qty / total_order * 100):.1f}%" if total_order > 0 else "0%"
+    scratch_qty = summary.get("total_scratch_qty", 0)
+    scratch_rate = summary.get("scratch_rate") or (
+        f"{(scratch_qty / total_order * 100):.1f}%" if total_order > 0 else "0%"
+    )
 
     whs_num_clean = str(oewhse_clean).strip()
     whs_card_title = "SELECTED WAREHOUSE" if whs_num_clean else "TOTAL WAREHOUSES"

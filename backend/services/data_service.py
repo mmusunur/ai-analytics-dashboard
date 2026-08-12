@@ -58,6 +58,13 @@ def load_from_csv_bytes(content: bytes) -> pd.DataFrame:
     return df
 
 
+def load_from_excel_bytes(content: bytes) -> pd.DataFrame:
+    """Parse uploaded Excel bytes into a DataFrame."""
+    df = pd.read_excel(BytesIO(content))
+    set_dataframe(df)
+    return df
+
+
 def get_or_generate() -> pd.DataFrame:
     """Return existing dataframe or generate sample data."""
     global _dataframe_store

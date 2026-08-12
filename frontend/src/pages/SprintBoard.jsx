@@ -280,6 +280,27 @@ export default function SprintBoard() {
         </p>
       </div>
 
+      {loading && (
+        <div
+          id="sprint-board-loading"
+          style={{
+            padding: '20px 24px',
+            marginBottom: '20px',
+            background: 'rgba(124,58,237,0.12)',
+            border: '1px solid rgba(124,58,237,0.35)',
+            borderRadius: '12px',
+            color: 'var(--text-secondary)',
+            fontSize: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+          }}
+        >
+          <RefreshCw size={16} className="spin" color="#a78bfa" />
+          Loading sprint tasks from Plane… this can take a few seconds on first refresh.
+        </div>
+      )}
+
       <MonitorRefreshBar
         title="Sprint Board Sync"
         lastUpdated={tasksLastUpdated}

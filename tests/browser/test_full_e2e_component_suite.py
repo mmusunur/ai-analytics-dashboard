@@ -162,8 +162,8 @@ def test_tc05_warehouse_filter_applies_to_table(page: Page):
 # ─────────────────────────────────────────────────────────────
 def test_tc06_copilot_sends_no_date_in_api_request(page: Page):
     """
-    TC-06 CRITICAL: AI Copilot must send oerdte='' (empty) — NEVER the global date.
-    This reads the current UI date dynamically and confirms the copilot does NOT include it.
+    TC-06 CRITICAL: AI Copilot must send oerdte='' — NEVER the global date.
+    Copilot searches whatever the user asks across all dates.
     """
     page.goto(BASE_URL)
     page.wait_for_selector("#copilot-input", timeout=15000)
@@ -179,8 +179,7 @@ def test_tc06_copilot_sends_no_date_in_api_request(page: Page):
 
     page.on("request", capture_copilot)
 
-    # Compute dynamic test date relative to current UI date
-    ui_iso, _ = get_ui_date(page)
+    ui_iso, ui_api = get_ui_date(page)
     from datetime import datetime, timedelta
     test_dt = datetime.strptime(ui_iso, "%Y-%m-%d") - timedelta(days=2)
     dynamic_date_iso = test_dt.strftime("%Y-%m-%d")
@@ -190,7 +189,6 @@ def test_tc06_copilot_sends_no_date_in_api_request(page: Page):
     page.click("#submit-db-btn")
     page.wait_for_timeout(1000)
 
-    # Ask copilot — it must NOT echo back the UI date
     page.locator("#copilot-input").fill("High Scratch Quantity")
     page.locator("button:has-text('Ask AI')").click()
     page.wait_for_selector("text=AI Copilot Finding", timeout=15000)
@@ -203,15 +201,12 @@ def test_tc06_copilot_sends_no_date_in_api_request(page: Page):
             f"TC-06 FAIL: Copilot sent UI date '{dynamic_date_api}' in body: {req_body}"
         )
         if req_body and "oerdte" in req_body:
-            try:
-                parsed = json.loads(req_body)
-                assert parsed.get("oerdte", "") == "", (
-                    f"TC-06 FAIL: oerdte is not empty in copilot request: '{parsed.get('oerdte')}'"
-                )
-            except json.JSONDecodeError:
-                pass
+            parsed = json.loads(req_body)
+            assert parsed.get("oerdte", "") == "", (
+                f"TC-06 FAIL: oerdte must be empty for copilot, got '{parsed.get('oerdte')}'"
+            )
 
-    print(f"TC-06 PASS: Copilot sent {len(copilot_requests)} request(s); UI date was NOT included")
+    print(f"TC-06 PASS: Copilot sent no date (global was {dynamic_date_api})")
 
 
 # ─────────────────────────────────────────────────────────────
