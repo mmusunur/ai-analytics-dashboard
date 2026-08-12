@@ -81,11 +81,13 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 | **40** | [`task_40_daily_memory_recall.md`](tasks/task_40_daily_memory_recall.md) | On new day / session start, **read `memory/`** (yesterday's `task_history`, `agent_state`, conversations) via `get_previous_day_context()` before acting |
 | **41** | [`task_41_build_authenticity_pipeline_telemetry.md`](tasks/task_41_build_authenticity_pipeline_telemetry.md) | **Build is not Done** — show sub-phases, elapsed time, verify-only vs code-changed; full completion requires Test→Close→Git |
 | **42** | [`task_42_build_detail_popup_end_to_end.md`](tasks/task_42_build_detail_popup_end_to_end.md) | **Build detail popup** — files + functionality persist from Build through Done for the current task; cleared only on idle/new pickup |
+| **43** | [`task_43_demo_readiness_zero_manual.md`](tasks/task_43_demo_readiness_zero_manual.md) | **Demo readiness** — zero manual intervention; servers up, git gate demo-friendly, pipeline resets idle after Done |
 
 9. **README sync (Task 39)** — after agent or architecture changes: update `tasks.md` index + `README.md` (features, agent table, pipeline table, latest task numbers). Included in git allowlist.
 10. **Daily memory recall (Task 40)** — agents check previous-day logs in `memory/task_history/` so tomorrow's session knows what completed, failed, or stayed In Progress.
 11. **Build authenticity (Task 41)** — Pickup/Build checkmarks ≠ task complete. UI shows build sub-phases, elapsed seconds, and **verify-only** (amber) vs **code changed** (green). **Click Build** to open detail popup (files + functionality). Test gate always runs after Build.
 12. **Build detail persistence (Task 42)** — `set_pipeline_status()` MUST carry `build_files_modified`, `build_functionality`, `build_outcome`, and `build_intents` for the **same task_id** through Test → Close → Git → Done. Popup stays populated until pipeline goes idle or a new task is picked up.
+13. **Demo readiness (Task 43)** — Before demo: all unit tests pass; servers + watcher running; `GIT_PUSH_OPTIONAL=true` for local-commit git gate; pipeline returns to **idle** after Done; builder auto-wires components to Dashboard.
 
 ---
 
@@ -147,6 +149,7 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 - 📄 [`tasks/task_40_daily_memory_recall.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_40_daily_memory_recall.md) — **Daily Memory Recall:** Read yesterday's task_history + agent_state at session start (`get_previous_day_context()`)
 - 📄 [`tasks/task_41_build_authenticity_pipeline_telemetry.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_41_build_authenticity_pipeline_telemetry.md) — **Build Authenticity:** Sub-phase telemetry, verify-only vs code-changed; task complete only after Test→Close→Git
 - 📄 [`tasks/task_42_build_detail_popup_end_to_end.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_42_build_detail_popup_end_to_end.md) — **Build Detail Popup:** Files + functionality persist from Build through Done for current task; cleared on idle/new pickup
+- 📄 [`tasks/task_43_demo_readiness_zero_manual.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_43_demo_readiness_zero_manual.md) — **Demo Readiness:** Zero manual intervention — servers, watcher, git gate, pipeline idle reset, builder Dashboard wiring
 
 ---
 

@@ -371,3 +371,39 @@ def test_{comp_name.lower()}_exists():
     assert file_path.exists(), "{comp_name}.jsx component file must exist"
 '''
     test_file.write_text(test_code, encoding="utf-8")
+    wire_component_to_dashboard(root_dir, comp_name)
+    return comp_name
+
+
+def wire_component_to_dashboard(root_dir: Path, comp_name: str) -> bool:
+    """Import and render a component on the main Dashboard page."""
+    dashboard = root_dir / "frontend" / "src" / "pages" / "Dashboard.jsx"
+    if not dashboard.exists():
+        return False
+    dash = dashboard.read_text(encoding="utf-8")
+    if f"<{comp_name}" in dash:
+        return False
+    updated = dash
+    import_line = f"import {comp_name} from '../components/{comp_name}'\n"
+    if comp_name not in updated:
+        updated = import_line + updated
+    anchor = "<DataAnalytics />"
+    if anchor in updated:
+        updated = updated.replace(
+            anchor,
+            f"{{/* ── {comp_name} sprint feature ── */}}\n      <{comp_name} />\n\n      {anchor}",
+            1,
+        )
+    elif "<AnomalyAlertPanel" in updated:
+        updated = updated.replace(
+            "<AnomalyAlertPanel",
+            f"{{/* ── {comp_name} sprint feature ── */}}\n      <{comp_name} />\n\n      <AnomalyAlertPanel",
+            1,
+        )
+    else:
+        return False
+    if updated != dash:
+        dashboard.write_text(updated, encoding="utf-8")
+        console.print(f"[green]✅ Wired {comp_name} into Dashboard.jsx[/green]")
+        return True
+    return False

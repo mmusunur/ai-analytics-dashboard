@@ -587,6 +587,14 @@ class SprintWatcherAgent:
                         self.workspace_slug,
                     )
                 complete_queue_task(task_id, task_title, duration)
+                from memory_manager import clear_build_progress, clear_test_progress
+                clear_build_progress()
+                clear_test_progress()
+                set_agent_working(False)
+                set_pipeline_status(
+                    "idle", "", "", "",
+                    f"Monitoring — '{task_title}' completed; waiting for next Plane task",
+                )
             else:
                 reason = output[:200] or "Tests failed after auto-retry attempts"
                 set_pipeline_status(
@@ -889,6 +897,8 @@ class SprintWatcherAgent:
                 time.sleep(1.0)
 
             for task in stuck_processed:
+                if _get_group(task) in {"completed", "done"}:
+                    continue
                 self._verify_close_in_progress_task(task)
                 time.sleep(1.0)
 
