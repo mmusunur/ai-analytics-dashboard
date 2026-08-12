@@ -13,6 +13,15 @@ const PHASES = [
   { key: 'done', label: '6. Done', short: 'Done', agent: '' },
 ]
 
+const BUILD_SUBPHASE_LABELS = {
+  starting: 'Starting build gate',
+  classifying: 'Classifying intent',
+  spec_load: 'Loading task spec',
+  patching: 'Applying code patches',
+  unit_verify: 'Unit verification (pytest)',
+  done: 'Build gate finishing',
+}
+
 const TEST_SUBPHASE_LABELS = {
   starting: 'Preparing suite',
   sprint_cases: 'Registering sprint cases',
@@ -39,35 +48,193 @@ function formatElapsed(isoStart) {
   return `${m}m ${sec % 60}s`
 }
 
+function BuildDetailPanel({ open, onClose, pipeline, taskTitle, isBuilding, buildElapsed }) {
+  if (!open) return null
+
+  const files = pipeline?.build_files_modified || []
+  const functionality = pipeline?.build_functionality || []
+  const intents = pipeline?.build_intents || []
+  const outcome = pipeline?.build_outcome || ''
+  const duration = pipeline?.build_duration_seconds
+  const subphase = pipeline?.build_subphase || ''
+
+  return (
+    <>
+      <div
+        role="presentation"
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9998,
+        }}
+      />
+      <div
+        id="build-detail-panel"
+        role="dialog"
+        aria-label="Build details"
+        style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+          zIndex: 9999, width: 'min(420px, 92vw)', maxHeight: '80vh', overflow: 'auto',
+          background: 'linear-gradient(145deg, #1e1b4b 0%, #0f172a 100%)',
+          border: '1px solid rgba(124,58,237,0.45)', borderRadius: '12px',
+          padding: '18px 20px', boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+          <div>
+            <div style={{ fontSize: '15px', fontWeight: 800, color: '#e2e8f0' }}>🔨 Build Details</div>
+            {taskTitle && (
+              <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>{taskTitle}</div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '6px',
+              color: '#94a3b8', cursor: 'pointer', padding: '4px 10px', fontSize: '14px',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {isBuilding && (
+          <div style={{
+            fontSize: '12px', color: '#fcd34d', marginBottom: '12px', padding: '8px 10px',
+            background: 'rgba(245,158,11,0.12)', borderRadius: '8px',
+          }}>
+            Build in progress — {BUILD_SUBPHASE_LABELS[subphase] || subphase || 'working'}
+            {buildElapsed && ` · ${buildElapsed}`}
+          </div>
+        )}
+
+        <div style={{ marginBottom: '14px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#a78bfa', marginBottom: '6px', textTransform: 'uppercase' }}>
+            Outcome
+          </div>
+          <div style={{ fontSize: '13px', color: '#e2e8f0' }}>
+            {outcome === 'verify_only' && 'Verify-only — requirements already in codebase'}
+            {outcome === 'code_changed' && `Code changed — ${files.length} file(s)${duration != null ? ` in ${duration}s` : ''}`}
+            {!outcome && isBuilding && 'Waiting for build result…'}
+            {!outcome && !isBuilding && 'No build recorded for this task yet'}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: '14px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#a78bfa', marginBottom: '6px', textTransform: 'uppercase' }}>
+            Functionality added / verified
+          </div>
+          {functionality.length > 0 ? (
+            <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12px', color: '#cbd5e1', lineHeight: 1.6 }}>
+              {functionality.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          ) : (
+            <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+              {isBuilding ? 'Classification in progress…' : 'No functionality summary yet'}
+            </div>
+          )}
+        </div>
+
+        {intents.length > 0 && (
+          <div style={{ marginBottom: '14px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginBottom: '6px' }}>Detected intents</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+              {intents.map((i) => (
+                <span key={i} style={{
+                  fontSize: '9px', padding: '2px 8px', borderRadius: '10px',
+                  background: 'rgba(124,58,237,0.2)', color: '#c4b5fd',
+                }}>
+                  {i}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#a78bfa', marginBottom: '6px', textTransform: 'uppercase' }}>
+            Files changed
+          </div>
+          {files.length > 0 ? (
+            <ul style={{
+              margin: 0, padding: '10px 12px', listStyle: 'none',
+              background: 'rgba(0,0,0,0.25)', borderRadius: '8px', fontSize: '11px',
+              fontFamily: 'ui-monospace, monospace', color: '#86efac', lineHeight: 1.7,
+            }}>
+              {files.map((f) => (
+                <li key={f}>📄 {f}</li>
+              ))}
+            </ul>
+          ) : (
+            <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+              {outcome === 'verify_only' ? 'No new files — existing code matched task' : 'No files listed yet'}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
 export default function AgentPipelineTracker({ pipeline, agentWorking, agentWorkingTask }) {
   const [, tick] = useState(0)
+  const [buildDetailOpen, setBuildDetailOpen] = useState(false)
   const phase = pipeline?.phase || 'idle'
   const taskTitle = pipeline?.task_title || agentWorkingTask || ''
   const activeAgent = pipeline?.active_agent || ''
   const message = pipeline?.message || ''
   const testSubphase = pipeline?.test_subphase || ''
   const testStartedAt = pipeline?.test_started_at || ''
+  const buildSubphase = pipeline?.build_subphase || ''
+  const buildStartedAt = pipeline?.build_started_at || ''
+  const buildOutcome = pipeline?.build_outcome || ''
+  const buildFiles = pipeline?.build_files_modified || []
+  const buildDuration = pipeline?.build_duration_seconds
   const currentIdx = phaseIndex(phase)
   const completedSteps = new Set(pipeline?.completed_steps || [])
   const isActive = !['idle', 'done', 'failed'].includes(phase)
   const isFailed = phase === 'failed'
   const isTesting = phase === 'testing'
+  const isBuilding = phase === 'building' || phase === 'retry'
   const isVerifyWaiting = phase === 'idle' && taskTitle && message.includes('Verify-close failed')
 
   useEffect(() => {
-    if (!isTesting && !testStartedAt) return undefined
+    if ((!isTesting && !testStartedAt) && (!isBuilding && !buildStartedAt)) return undefined
     const id = setInterval(() => tick((n) => n + 1), 1000)
     return () => clearInterval(id)
-  }, [isTesting, testStartedAt])
+  }, [isTesting, testStartedAt, isBuilding, buildStartedAt])
 
-  const elapsed = formatElapsed(testStartedAt)
+  const testElapsed = formatElapsed(testStartedAt)
+  const buildElapsed = formatElapsed(buildStartedAt)
+
+  const isMonitoringIdle = phase === 'idle' && !taskTitle && !pipeline?.task_id
 
   const isStepComplete = (key) => {
+    if (isMonitoringIdle) return false
     if (phase === 'done') return true
     return completedSteps.has(key)
   }
 
+  const hasBuildDetail = Boolean(
+    pipeline?.build_files_modified?.length
+    || pipeline?.build_functionality?.length
+    || pipeline?.build_outcome
+    || isBuilding
+  )
+  const buildStepClickable = isStepComplete('building') || isBuilding || hasBuildDetail
+
   return (
+    <>
+    <BuildDetailPanel
+      open={buildDetailOpen}
+      onClose={() => setBuildDetailOpen(false)}
+      pipeline={pipeline}
+      taskTitle={taskTitle}
+      isBuilding={isBuilding}
+      buildElapsed={buildElapsed}
+    />
     <div
       id="agent-pipeline-tracker"
       style={{
@@ -108,7 +275,7 @@ export default function AgentPipelineTracker({ pipeline, agentWorking, agentWork
         </div>
       )}
 
-      {(activeAgent && (isActive || isVerifyWaiting)) || (isFailed && message) || isTesting ? (
+      {(activeAgent && (isActive || isVerifyWaiting)) || (isFailed && message) || isTesting || isBuilding ? (
         <div style={{
           fontSize: '13px', color: isFailed ? '#fca5a5' : '#c4b5fd', marginBottom: '14px',
           display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap',
@@ -129,7 +296,32 @@ export default function AgentPipelineTracker({ pipeline, agentWorking, agentWork
               fontWeight: 700, fontSize: '11px', color: '#93c5fd',
             }}>
               🧪 {TEST_SUBPHASE_LABELS[testSubphase] || testSubphase}
-              {elapsed && ` · ${elapsed}`}
+              {testElapsed && ` · ${testElapsed}`}
+            </span>
+          )}
+          {isBuilding && buildSubphase && (
+            <span style={{
+              background: 'rgba(245,158,11,0.22)', padding: '4px 12px', borderRadius: '20px',
+              fontWeight: 700, fontSize: '11px', color: '#fcd34d',
+            }}>
+              🔨 {BUILD_SUBPHASE_LABELS[buildSubphase] || buildSubphase}
+              {buildElapsed && ` · ${buildElapsed}`}
+            </span>
+          )}
+          {buildOutcome === 'verify_only' && completedSteps.has('building') && !isBuilding && (
+            <span style={{
+              background: 'rgba(245,158,11,0.2)', padding: '4px 12px', borderRadius: '20px',
+              fontSize: '11px', color: '#fcd34d', fontWeight: 700,
+            }}>
+              Verify-only build ({buildDuration != null ? `${buildDuration}s` : 'no new files'})
+            </span>
+          )}
+          {buildOutcome === 'code_changed' && buildFiles.length > 0 && completedSteps.has('building') && !isBuilding && (
+            <span style={{
+              background: 'rgba(16,185,129,0.2)', padding: '4px 12px', borderRadius: '20px',
+              fontSize: '11px', color: '#6ee7b7', fontWeight: 700,
+            }}>
+              {buildFiles.length} file(s) changed ({buildDuration != null ? `${buildDuration}s` : ''})
             </span>
           )}
           {isFailed && (
@@ -143,6 +335,31 @@ export default function AgentPipelineTracker({ pipeline, agentWorking, agentWork
           {message && <span style={{ color: '#94a3b8', fontSize: '12px' }}>{message}</span>}
         </div>
       ) : null}
+
+      {isBuilding && buildSubphase && (
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+          {Object.entries(BUILD_SUBPHASE_LABELS).filter(([k]) => k !== 'done').map(([key, label]) => {
+            const order = ['starting', 'classifying', 'spec_load', 'patching', 'unit_verify']
+            const cur = order.indexOf(buildSubphase)
+            const idx = order.indexOf(key)
+            const done = idx < cur
+            const active = key === buildSubphase
+            return (
+              <span
+                key={key}
+                style={{
+                  fontSize: '9px', fontWeight: 700, padding: '3px 8px', borderRadius: '12px',
+                  background: active ? 'rgba(245,158,11,0.35)' : done ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.05)',
+                  color: active ? '#fcd34d' : done ? '#34d399' : '#64748b',
+                  border: active ? '1px solid rgba(251,191,36,0.5)' : '1px solid transparent',
+                }}
+              >
+                {done ? '✓ ' : active ? '● ' : ''}{label}
+              </span>
+            )
+          })}
+        </div>
+      )}
 
       {isTesting && testSubphase && (
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
@@ -193,7 +410,11 @@ export default function AgentPipelineTracker({ pipeline, agentWorking, agentWork
           let icon = '○'
 
           if (isStepComplete(p.key)) {
-            bg = 'rgba(16,185,129,0.12)'; color = '#34d399'; border = '1px solid rgba(16,185,129,0.35)'; icon = '✓'
+            const verifyBuild = p.key === 'building' && buildOutcome === 'verify_only'
+            bg = verifyBuild ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)'
+            color = verifyBuild ? '#fcd34d' : '#34d399'
+            border = verifyBuild ? '1px solid rgba(245,158,11,0.35)' : '1px solid rgba(16,185,129,0.35)'
+            icon = verifyBuild ? '✓v' : '✓'
           } else if (p.key === normalizePhase(phase)) {
             const isRetry = phase === 'retry' && p.key === 'building'
             bg = isRetry ? 'rgba(245,158,11,0.18)' : 'rgba(124,58,237,0.22)'
@@ -209,9 +430,18 @@ export default function AgentPipelineTracker({ pipeline, agentWorking, agentWork
           return (
             <div
               key={p.key}
+              role={buildStepClickable && p.key === 'building' ? 'button' : undefined}
+              tabIndex={buildStepClickable && p.key === 'building' ? 0 : undefined}
+              onClick={p.key === 'building' && buildStepClickable ? () => setBuildDetailOpen(true) : undefined}
+              onKeyDown={p.key === 'building' && buildStepClickable ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') setBuildDetailOpen(true)
+              } : undefined}
+              title={p.key === 'building' && buildStepClickable ? 'Click to see files changed & functionality' : undefined}
               style={{
                 textAlign: 'center', padding: '10px 8px', borderRadius: '8px',
                 background: bg, border, transition: 'all 0.2s ease',
+                cursor: p.key === 'building' && buildStepClickable ? 'pointer' : 'default',
+                outline: 'none',
               }}
             >
               <div style={{ fontSize: '16px', marginBottom: '4px' }}>{icon}</div>
@@ -219,11 +449,15 @@ export default function AgentPipelineTracker({ pipeline, agentWorking, agentWork
                 {phase === 'retry' && p.key === 'building' ? 'Build ↻' : p.short}
               </div>
               <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px' }}>{p.agent}</div>
+              {p.key === 'building' && buildStepClickable && (
+                <div style={{ fontSize: '8px', color: '#a78bfa', marginTop: '4px' }}>Click for details</div>
+              )}
             </div>
           )
         })}
       </div>
     </div>
+    </>
   )
 }
 

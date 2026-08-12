@@ -2,7 +2,7 @@ import sys
 import json
 import time
 import psutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from rich.console import Console
 try:
@@ -82,6 +82,47 @@ def set_agent_working(is_working: bool, task_title: str = ""):
     save_state(state)
 
 
+PHASE_PROGRESS = {
+    "idle": 0,
+    "pickup": 15,
+    "building": 40,
+    "retry": 50,
+    "testing": 65,
+    "closing": 85,
+    "git_push": 95,
+    "done": 100,
+    "failed": 0,
+}
+
+# Persisted for Build detail popup — must survive phase transitions on the same task.
+BUILD_DETAIL_KEYS = (
+    "build_outcome",
+    "build_duration_seconds",
+    "build_files_modified",
+    "build_intents",
+    "build_functionality",
+    "build_detail_updated_at",
+)
+
+BUILD_PROGRESS_KEYS = (
+    "build_started_at",
+    "build_subphase",
+)
+
+
+def _carry_build_fields(pipeline: dict, prev: dict, task_id: str, phase: str) -> None:
+    """Keep build popup data for the active task from Build through Done."""
+    if not task_id or task_id != prev.get("task_id"):
+        return
+    for key in BUILD_DETAIL_KEYS:
+        if key in prev:
+            pipeline[key] = prev[key]
+    if phase in ("building", "retry"):
+        for key in BUILD_PROGRESS_KEYS:
+            if key in prev:
+                pipeline[key] = prev[key]
+
+
 def set_pipeline_status(
     phase: str,
     task_id: str = "",
@@ -92,7 +133,7 @@ def set_pipeline_status(
     """Track sprint pipeline phase for UI telemetry (pickup → build → test → close → git)."""
     state = load_state()
     prev = state.get("pipeline") or {}
-    state["pipeline"] = {
+    pipeline = {
         "phase": phase,
         "task_id": task_id,
         "task_title": task_title,
@@ -100,14 +141,21 @@ def set_pipeline_status(
         "message": message,
         "progress_pct": PHASE_PROGRESS.get(phase, 0),
         "updated_at": datetime.now().isoformat(),
-        "completed_steps": prev.get("completed_steps", []),
+        "completed_steps": [] if phase == "idle" and not task_id else prev.get("completed_steps", []),
     }
+    _carry_build_fields(pipeline, prev, task_id, phase)
+    state["pipeline"] = pipeline
     if phase == "testing" and prev.get("test_started_at"):
         state["pipeline"]["test_started_at"] = prev["test_started_at"]
         state["pipeline"]["test_subphase"] = prev.get("test_subphase", "starting")
     elif phase != "testing":
         state["pipeline"].pop("test_started_at", None)
         state["pipeline"].pop("test_subphase", None)
+    if phase == "idle" and not task_id:
+        for key in ("build_outcome", "build_duration_seconds", "build_files_modified",
+                    "build_started_at", "build_subphase", "build_intents", "build_functionality",
+                    "build_detail_updated_at"):
+            state["pipeline"].pop(key, None)
     save_state(state)
     if task_id and phase not in ("idle",):
         update_queue_progress(task_id, phase, active_agent, message)
@@ -130,6 +178,8 @@ def reset_pipeline_steps(task_id: str = "", task_title: str = "") -> None:
     state = load_state()
     pipeline = state.get("pipeline") or {}
     pipeline["completed_steps"] = []
+    for key in (*BUILD_DETAIL_KEYS, *BUILD_PROGRESS_KEYS):
+        pipeline.pop(key, None)
     if task_id:
         pipeline["task_id"] = task_id
     if task_title:
@@ -164,18 +214,6 @@ def get_pipeline_status() -> dict:
     }
 
 
-PHASE_PROGRESS = {
-    "idle": 0,
-    "pickup": 15,
-    "building": 40,
-    "retry": 50,
-    "testing": 65,
-    "closing": 85,
-    "git_push": 95,
-    "done": 100,
-    "failed": 0,
-}
-
 TEST_SUBPHASE_PROGRESS = {
     "starting": 65,
     "sprint_cases": 67,
@@ -184,6 +222,128 @@ TEST_SUBPHASE_PROGRESS = {
     "excel": 83,
     "done": 84,
 }
+
+BUILD_SUBPHASE_PROGRESS = {
+    "starting": 18,
+    "classifying": 22,
+    "spec_load": 26,
+    "patching": 32,
+    "unit_verify": 38,
+    "done": 40,
+}
+
+
+def update_build_progress(
+    subphase: str,
+    message: str,
+    task_id: str = "",
+    task_title: str = "",
+    files_modified: list | None = None,
+    build_outcome: str = "",
+) -> None:
+    """Heartbeat during Build — UI shows sub-phase, elapsed time, files touched."""
+    state = load_state()
+    pipeline = dict(state.get("pipeline") or {})
+    if not pipeline.get("build_started_at"):
+        pipeline["build_started_at"] = datetime.now().isoformat()
+    pipeline["phase"] = "building"
+    pipeline["build_subphase"] = subphase
+    pipeline["active_agent"] = "builder"
+    pipeline["message"] = message
+    pipeline["progress_pct"] = BUILD_SUBPHASE_PROGRESS.get(subphase, PHASE_PROGRESS["building"])
+    pipeline["updated_at"] = datetime.now().isoformat()
+    if files_modified is not None:
+        pipeline["build_files_modified"] = files_modified
+    if build_outcome:
+        pipeline["build_outcome"] = build_outcome
+    if task_id:
+        pipeline["task_id"] = task_id
+    if task_title:
+        pipeline["task_title"] = task_title
+    state["pipeline"] = pipeline
+    save_state(state)
+    tid = pipeline.get("task_id") or task_id
+    if tid:
+        update_queue_progress(tid, "building", "builder", message)
+
+
+def clear_build_progress() -> None:
+    """Clear in-progress build heartbeat; keep build result for UI detail popup."""
+    state = load_state()
+    pipeline = dict(state.get("pipeline") or {})
+    for key in ("build_subphase", "build_started_at"):
+        pipeline.pop(key, None)
+    state["pipeline"] = pipeline
+    save_state(state)
+
+
+BUILD_INTENT_LABELS = {
+    "DATA_ANALYTICS_ML": "Data Analytics — CSV/Excel upload, quick train, dashboard panel",
+    "NAVBAR_AND_SIDEBAR_NAVIGATION": "Navbar & sidebar navigation links and layout",
+    "MULTI_TARGET_DATABASE_ARCHITECTURE": "Warehouse / multi-DB analytics wiring",
+    "HIDE_UI_CONTENT": "Hide or remove dashboard widgets per task spec",
+    "REMOVE_UNWANTED_CONTENT": "Remove unwanted UI sections from dashboard",
+    "HIDE_ITEMS_FROM_UI": "Hide specific UI items from dashboard",
+    "BROWSER_HEADER_TITLE": "Browser tab title (index.html)",
+    "SPRINT_AGENT_FIX": "Agent pipeline / import path fixes",
+    "AI_COPILOT": "AI Data Copilot search and NL filters",
+    "WAREHOUSE_TABLE": "Warehouse sales table and filters",
+    "KPI_CARDS": "Executive KPI summary cards",
+    "CHARTS": "Bar / scatter chart components",
+    "ADDITIONAL_FEATURES": "Additional dashboard features panel (AddAditionalFeatures)",
+}
+
+
+def _build_functionality_lines(intents: list, files_modified: list, already_applied: bool) -> list[str]:
+    """Human-readable functionality summary for Build detail popup."""
+    lines = []
+    for intent in intents or []:
+        label = BUILD_INTENT_LABELS.get(intent)
+        if label:
+            lines.append(label)
+        elif intent and not intent.startswith("_"):
+            lines.append(intent.replace("_", " ").title())
+    if not lines and files_modified:
+        lines.append(f"Code updates in {len(files_modified)} file(s)")
+    if already_applied and not files_modified:
+        lines.append("Requirements already satisfied in codebase — verify-only (no new files)")
+    elif already_applied:
+        lines.append("Partial verify-only — some requirements were already implemented")
+    if not lines:
+        lines.append("Builder ran — see changed files below")
+    return lines
+
+
+def record_build_result(
+    task_id: str,
+    task_title: str,
+    files_modified: list,
+    already_applied: bool,
+    duration_seconds: float,
+    intents: list | None = None,
+) -> None:
+    """Persist build outcome so UI distinguishes real code changes vs verify-only."""
+    state = load_state()
+    pipeline = dict(state.get("pipeline") or {})
+    real_files = [f for f in (files_modified or []) if f != "already_applied"]
+    outcome = "verify_only" if already_applied or not real_files else "code_changed"
+    pipeline["build_outcome"] = outcome
+    pipeline["build_files_modified"] = real_files
+    pipeline["build_duration_seconds"] = round(duration_seconds, 1)
+    pipeline["build_intents"] = list(intents or [])
+    pipeline["build_functionality"] = _build_functionality_lines(intents or [], real_files, already_applied)
+    pipeline["build_detail_updated_at"] = datetime.now().isoformat()
+    pipeline["updated_at"] = datetime.now().isoformat()
+    state["pipeline"] = pipeline
+    save_state(state)
+    log_task_result(
+        task_id or "BUILD",
+        task_title or "Build gate",
+        "builder",
+        "completed",
+        f"outcome={outcome} files={len(real_files)} duration={duration_seconds:.1f}s",
+        duration_seconds,
+    )
 
 
 def update_test_progress(
@@ -475,6 +635,60 @@ def log_task_result(task_id: str, task_title: str, agent_name: str, status: str,
             f.write(json.dumps(entry) + "\n")
     except Exception as e:
         console.print(f"[yellow]⚠️ Failed to log task result: {e}[/yellow]")
+
+
+def load_task_history_for_date(date_str: str = "") -> list[dict]:
+    """Load task history entries for a given YYYY-MM-DD (default: today)."""
+    _ensure_dirs()
+    day = date_str or datetime.now().strftime("%Y-%m-%d")
+    history_file = TASK_HISTORY_DIR / f"{day}_task_history.jsonl"
+    if not history_file.exists():
+        return []
+    entries = []
+    try:
+        with history_file.open("r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        entries.append(json.loads(line.strip()))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return entries
+
+
+def get_previous_day_context() -> dict:
+    """
+    Task 40 — Summary of yesterday's activity for agent session startup.
+    Agents call this at the start of a new day/session before picking Plane tasks.
+    """
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y-%m-%d")
+    y_entries = load_task_history_for_date(yesterday)
+    t_entries = load_task_history_for_date(today)
+    state = load_state()
+
+    completed = [e for e in y_entries if e.get("status") == "completed"]
+    failed = [e for e in y_entries if e.get("status") == "failed"]
+    titles_done = list({e.get("task_title") for e in completed if e.get("task_title")})
+
+    return {
+        "recall_date": yesterday,
+        "today": today,
+        "yesterday_task_count": len(y_entries),
+        "yesterday_completed": titles_done[:20],
+        "yesterday_failed_count": len(failed),
+        "yesterday_failed_titles": [e.get("task_title") for e in failed[:10]],
+        "today_task_count_so_far": len(t_entries),
+        "last_pipeline_phase": (state.get("pipeline") or {}).get("phase", "idle"),
+        "last_conversation_update": state.get("last_conversation_update"),
+        "queue_completed_recent": (state.get("task_queue") or {}).get("completed", [])[:5],
+        "summary": (
+            f"Previous day {yesterday}: {len(completed)} completed, {len(failed)} failed. "
+            f"Pipeline now {(state.get('pipeline') or {}).get('phase', 'idle')}."
+        ),
+    }
 
 
 def update_conversation_memory(agent_name: str = "assistant", user_query: str = "", response_summary: str = ""):

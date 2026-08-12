@@ -28,6 +28,7 @@ from memory_manager import (
     set_pipeline_status, sync_pending_tasks, set_queue_active,
     complete_queue_task, fail_queue_task, get_task_queue,
     mark_pipeline_step_complete, reset_pipeline_steps, rewind_pipeline_to_step,
+    clear_build_progress, clear_test_progress,
 )
 from sprint_watcher_helpers import render_sprint_table, IN_PROGRESS_GROUPS, quality_gate_action
 
@@ -422,7 +423,7 @@ class SprintWatcherAgent:
                     if build_try == 1:
                         set_pipeline_status(
                             "building", task_id, task_title, "builder",
-                            "Step 2/6 Build — implementing code (must pass before Test)",
+                            "Step 2/6 Build — classifying intent & applying code (see sub-phases below)",
                         )
                     else:
                         set_pipeline_status(
@@ -439,6 +440,21 @@ class SprintWatcherAgent:
                     any_builder_ran = any_builder_ran or build_ok
                     if build_ok:
                         mark_pipeline_step_complete("building")
+                        pl = (load_state().get("pipeline") or {})
+                        outcome = pl.get("build_outcome", "code_changed")
+                        dur = pl.get("build_duration_seconds", 0)
+                        files = pl.get("build_files_modified") or []
+                        if outcome == "verify_only":
+                            msg = (
+                                f"Build ✓ verify-only ({dur}s) — requirements already in code; "
+                                f"starting full Test gate"
+                            )
+                        else:
+                            msg = (
+                                f"Build ✓ {len(files)} file(s) changed ({dur}s) — starting Test gate"
+                            )
+                        set_pipeline_status("building", task_id, task_title, "builder", msg)
+                        clear_build_progress()
                         break
                     console.print(
                         f"[red]⛔ Build gate blocked — attempt {build_try}/{max_attempts} failed. "
@@ -461,7 +477,7 @@ class SprintWatcherAgent:
                 test_ok, test_output = self._run_tests(
                     task_id, task_title, desc, project_name, mode="full",
                 )
-                from memory_manager import clear_test_progress
+                clear_build_progress()
                 clear_test_progress()
 
                 if test_ok:
@@ -779,6 +795,10 @@ class SprintWatcherAgent:
     def watch(self, max_cycles: Optional[int] = None):
         if not self._init_project():
             return
+
+        from memory_manager import get_previous_day_context
+        recall = get_previous_day_context()
+        console.print(f"[dim]📅 Task 40 memory recall: {recall.get('summary', '')}[/dim]")
 
         console.print(Panel.fit("Sprint Watcher Agent — Running Across Workspace Projects", border_style="magenta"))
         cycle = 0

@@ -25,7 +25,7 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 1. **Never skip a failed step** — if Build fails, Test must **not** start.
 2. **Retry the same step** — Build failure → retry Build with error context; Test failure → go back to Build (not straight to Close).
 3. **No human To Do move** between retries — agent auto-moves To Do and re-picks after all cycles exhausted.
-4. **UI checkmarks** — a step shows ✓ only when that step **actually passed** (`completed_steps` in pipeline state).
+4. **UI checkmarks** — a step shows ✓ only when that step **actually passed** (`completed_steps` in pipeline state). **When idle with no active task**, all six steps show **○** (empty) — never stale ✓ from a prior task.
 5. **Plane In Progress** during Build/Test is normal — **Done** only when all gates pass.
 6. **Test heartbeat** — `tester_agent.py` writes `test_subphase` + `test_started_at` to pipeline state (starting → sprint_cases → unit → browser → excel). UI shows sub-phase chips and elapsed time. **`agent_working` is Build-only** — UI keeps polling during long Test runs.
 7. **Verify-close failure** — pipeline resets to `idle` with a cooldown message (not stuck at 65% Testing). Sprint watcher retries verify-close after cooldown when task stays In Progress.
@@ -70,6 +70,22 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 **Restart sprint watcher** after changing `agents/sprint_watcher_agent.py`.
 
 **Do not** manually implement an open Plane sprint task in Cursor (e.g. Data Analytics) — let the sprint pipeline run it.
+
+---
+
+## 📚 Agent Documentation & Memory Mandates (Tasks 39–40)
+
+| Task | Rule | Agent MUST |
+|------|------|------------|
+| **39** | [`task_39_readme_architecture_sync.md`](tasks/task_39_readme_architecture_sync.md) | Update **`README.md`** whenever architecture, agents, pipeline, or new `tasks/*.md` specs change — same session as the code change |
+| **40** | [`task_40_daily_memory_recall.md`](tasks/task_40_daily_memory_recall.md) | On new day / session start, **read `memory/`** (yesterday's `task_history`, `agent_state`, conversations) via `get_previous_day_context()` before acting |
+| **41** | [`task_41_build_authenticity_pipeline_telemetry.md`](tasks/task_41_build_authenticity_pipeline_telemetry.md) | **Build is not Done** — show sub-phases, elapsed time, verify-only vs code-changed; full completion requires Test→Close→Git |
+| **42** | [`task_42_build_detail_popup_end_to_end.md`](tasks/task_42_build_detail_popup_end_to_end.md) | **Build detail popup** — files + functionality persist from Build through Done for the current task; cleared only on idle/new pickup |
+
+9. **README sync (Task 39)** — after agent or architecture changes: update `tasks.md` index + `README.md` (features, agent table, pipeline table, latest task numbers). Included in git allowlist.
+10. **Daily memory recall (Task 40)** — agents check previous-day logs in `memory/task_history/` so tomorrow's session knows what completed, failed, or stayed In Progress.
+11. **Build authenticity (Task 41)** — Pickup/Build checkmarks ≠ task complete. UI shows build sub-phases, elapsed seconds, and **verify-only** (amber) vs **code changed** (green). **Click Build** to open detail popup (files + functionality). Test gate always runs after Build.
+12. **Build detail persistence (Task 42)** — `set_pipeline_status()` MUST carry `build_files_modified`, `build_functionality`, `build_outcome`, and `build_intents` for the **same task_id** through Test → Close → Git → Done. Popup stays populated until pipeline goes idle or a new task is picked up.
 
 ---
 
@@ -127,6 +143,10 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 - 📄 [`tasks/task_35_comprehensive_browser_testing.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_35_comprehensive_browser_testing.md) — Comprehensive Browser Tests: All Fields + Submit + Calculation Verification + Excel Status Sync (see Task 36 for dual search rules)
 - 📄 [`tasks/task_37_auto_retry_until_tests_pass.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_37_auto_retry_until_tests_pass.md) — **Auto-Retry Until Pass:** On test failure agent rebuilds automatically with failure context; UI shows retry/failed/done clearly (no manual To Do move)
 - 📄 [`tasks/task_38_git_repo_sync_gate.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_38_git_repo_sync_gate.md) — **Git Repo Sync Gate:** Commit allowlist by folder structure; never mark Done without git sync; idle git sweep
+- 📄 [`tasks/task_39_readme_architecture_sync.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_39_readme_architecture_sync.md) — **README Architecture Sync:** Update README.md whenever agents, pipeline, or architecture changes (same session)
+- 📄 [`tasks/task_40_daily_memory_recall.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_40_daily_memory_recall.md) — **Daily Memory Recall:** Read yesterday's task_history + agent_state at session start (`get_previous_day_context()`)
+- 📄 [`tasks/task_41_build_authenticity_pipeline_telemetry.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_41_build_authenticity_pipeline_telemetry.md) — **Build Authenticity:** Sub-phase telemetry, verify-only vs code-changed; task complete only after Test→Close→Git
+- 📄 [`tasks/task_42_build_detail_popup_end_to_end.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_42_build_detail_popup_end_to_end.md) — **Build Detail Popup:** Files + functionality persist from Build through Done for current task; cleared on idle/new pickup
 
 ---
 

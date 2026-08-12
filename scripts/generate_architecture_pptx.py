@@ -126,7 +126,6 @@ def build_presentation() -> Presentation:
     # ── Slide 1: Title ─────────────────────────────────────────────────────
     s1 = prs.slides.add_slide(blank)
     set_slide_background(s1, BG_DARK)
-    add_accent_bar(s1, top=Inches(2.8), height=Inches(0.06))
     tb = s1.shapes.add_textbox(Inches(0.8), Inches(2.0), Inches(11.5), Inches(2.5))
     tf = tb.text_frame
     tf.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -210,25 +209,7 @@ def build_presentation() -> Presentation:
     )
     add_footer(s3)
 
-    # ── Slide 4: System Architecture ───────────────────────────────────────
-    s4 = prs.slides.add_slide(blank)
-    set_slide_background(s4, BG_DARK)
-    add_title_block(s4, "System Architecture", "Layers we built in this application")
-    layers = [
-        ("Presentation", "React + Vite (:5173) — Dashboard, Analytics, Sprint Board, Agent Monitor"),
-        ("API Layer", "FastAPI + Uvicorn (:8000) — REST routers, CORS, OpenAPI docs"),
-        ("Agent Fleet", "Sprint Watcher · Builder · Tester · Git · Orchestrator"),
-        ("MCP Bridge", "plane · github · memory · browser — tool registry in mcp_config.json"),
-        ("Data", "PostgreSQL · Oracle DEV/F1 · warehouse_seed.json fallback"),
-        ("External PM", "Plane REST API — tasks, sprints, comments, status"),
-    ]
-    y = 1.4
-    for label, desc in layers:
-        add_card(s4, Inches(0.5), Inches(y), Inches(12.1), Inches(0.82), label, [desc], ACCENT_LIGHT)
-        y += 0.92
-    add_footer(s4)
-
-    # ── Slide 5: FastAPI (dedicated) ───────────────────────────────────────
+    # ── Slide 4: FastAPI (dedicated) ───────────────────────────────────────
     s5 = prs.slides.add_slide(blank)
     set_slide_background(s5, BG_DARK)
     add_title_block(s5, "FastAPI Backend", "Python 3.10 · backend/main.py · OpenAPI at /docs")
@@ -312,10 +293,9 @@ def build_presentation() -> Presentation:
     )
     add_footer(s7)
 
-    # ── Slide 8: Summary ───────────────────────────────────────────────────
+    # ── Slide 7: Summary ───────────────────────────────────────────────────
     s8 = prs.slides.add_slide(blank)
     set_slide_background(s8, BG_DARK)
-    add_accent_bar(s8, top=Inches(3.2), height=Inches(0.06))
     tb = s8.shapes.add_textbox(Inches(0.8), Inches(2.2), Inches(11.5), Inches(2.8))
     tf = tb.text_frame
     p = tf.paragraphs[0]
