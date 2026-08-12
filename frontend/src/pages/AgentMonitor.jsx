@@ -9,6 +9,7 @@ import { useLivePoll } from '../hooks/useLivePoll'
 import { useAgentWorking } from '../context/AgentWorkingContext'
 import MonitorRefreshBar from '../components/MonitorRefreshBar'
 import AgentPipelineTracker from '../components/AgentPipelineTracker'
+import TaskQueuePanel from '../components/TaskQueuePanel'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -63,15 +64,15 @@ export default function AgentMonitor() {
     error,
     refresh,
     secondsUntilRefresh,
-    paused,
   } = useLivePoll(fetchFleet, {
     intervalMs: 4000,
-    pause: agentWorking,
+    pause: false,
     enabled: true,
   })
 
   const agents = fleet?.agents || {}
   const pipeline = fleet?.pipeline || {}
+  const taskQueue = fleet?.task_queue || {}
   const runningCount = Object.values(agents).filter((a) => (a.status || '').toLowerCase() === 'running').length
 
   return (
@@ -94,7 +95,8 @@ export default function AgentMonitor() {
         title="Agent Fleet Telemetry"
         lastUpdated={lastUpdated}
         isRefreshing={isRefreshing || isInitialLoad}
-        paused={paused}
+        paused={false}
+        agentWorking={agentWorking}
         secondsUntilRefresh={secondsUntilRefresh}
         error={error}
         onRefresh={refresh}
@@ -103,13 +105,12 @@ export default function AgentMonitor() {
 
       {agentWorking && (
         <div style={{
-          marginBottom: '16px', padding: '12px 16px', borderRadius: '10px',
-          background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.4)',
-          fontSize: '13px', color: '#c4b5fd',
+          marginBottom: '16px', padding: '10px 14px', borderRadius: '10px',
+          background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.35)',
+          fontSize: '12px', color: '#c4b5fd',
         }}>
-          🔒 <strong>Agent modifying code</strong> — auto-refresh paused to avoid UI disruption.
+          ⚡ <strong>Agent working</strong> — fleet telemetry stays live so you can track pipeline progress.
           {agentWorkingTask && <> Task: <em>{agentWorkingTask}</em></>}
-          {agentWorkingSince && <> · since {formatUpdated(agentWorkingSince)}</>}
         </div>
       )}
 
@@ -119,6 +120,8 @@ export default function AgentMonitor() {
         agentWorkingTask={agentWorkingTask}
       />
 
+      <TaskQueuePanel taskQueue={taskQueue} pipeline={pipeline} />
+
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginBottom: '16px', flexWrap: 'wrap', gap: '12px',
@@ -126,6 +129,8 @@ export default function AgentMonitor() {
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           <StatPill label="Agents running" value={`${runningCount}/6`} color="#34d399" />
           <StatPill label="Pipeline phase" value={pipeline.phase || 'idle'} color="#a78bfa" />
+          <StatPill label="Queued tasks" value={taskQueue?.pending?.length ?? 0} color="#38bdf8" />
+          <StatPill label="Progress" value={pipeline?.progress_pct ? `${pipeline.progress_pct}%` : '—'} color="#34d399" />
           <StatPill label="Backend sync" value={fleet?.status === 'success' ? 'Connected' : 'Live'} color="#60a5fa" />
         </div>
         <Link to="/sprints" style={{
@@ -134,15 +139,18 @@ export default function AgentMonitor() {
         }}>
           Open Sprint Monitor <ExternalLink size={14} />
         </Link>
+        <Link to="/mcp" style={{
+          display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px',
+          color: '#a78bfa', fontWeight: 600, textDecoration: 'none',
+        }}>
+          MCP Explorer <ExternalLink size={14} />
+        </Link>
       </div>
 
       <div
         id="agents-grid-container"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-          gap: '16px',
-        }}
+        className="agents-grid"
+        style={{ gap: '16px' }}
       >
         {AGENT_DEFS.map((ag) => {
           const info = agents[ag.key] || {}

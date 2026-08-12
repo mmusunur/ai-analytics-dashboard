@@ -1,12 +1,27 @@
 /**
- * useLivePoll — reliable auto-refresh with pause support, last-updated tracking, countdown.
+ * useLivePoll — auto-refresh with optional soft-pause (slow poll) during agent work.
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
+
+async function fetchWithRetry(fn, retries = 2) {
+  let lastErr
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastErr = err
+      if (i < retries) await new Promise((r) => setTimeout(r, 800 * (i + 1)))
+    }
+  }
+  throw lastErr
+}
 
 export function useLivePoll(fetchFn, options = {}) {
   const {
     intervalMs = 5000,
     pause = false,
+    /** When pause=true, still poll at this slower interval (keeps UI alive). null = stop polling. */
+    pauseIntervalMs = null,
     enabled = true,
     deps = [],
   } = options
@@ -23,53 +38,53 @@ export function useLivePoll(fetchFn, options = {}) {
   const pauseRef = useRef(pause)
   pauseRef.current = pause
 
+  const effectiveInterval = pause && pauseIntervalMs ? pauseIntervalMs : intervalMs
+  const isSoftPaused = pause && pauseIntervalMs != null
+  const isHardPaused = pause && pauseIntervalMs == null
+
   const refresh = useCallback(async (silent = true) => {
     if (!enabled) return null
     try {
       setIsRefreshing(true)
-      const result = await fetchRef.current()
+      const result = await fetchWithRetry(() => fetchRef.current())
       setData(result)
       setLastUpdated(new Date())
       setError(null)
-      setSecondsUntilRefresh(Math.ceil(intervalMs / 1000))
+      setSecondsUntilRefresh(Math.ceil(effectiveInterval / 1000))
       return result
     } catch (err) {
-      const msg = err?.message || 'Failed to refresh data'
+      const msg = err?.response?.data?.message || err?.message || 'Failed to refresh data'
       setError(msg)
       return null
     } finally {
       setIsRefreshing(false)
       setIsInitialLoad(false)
     }
-  }, [enabled, intervalMs])
+  }, [enabled, effectiveInterval])
 
-  // Initial + dependency-triggered refresh
   useEffect(() => {
     if (!enabled) return
     refresh(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, refresh, ...deps])
 
-  // Auto-refresh interval (paused when agent is working)
   useEffect(() => {
-    if (!enabled) return undefined
+    if (!enabled || isHardPaused) return undefined
 
     const pollTimer = setInterval(() => {
-      if (!pauseRef.current) refresh(true)
-    }, intervalMs)
+      refresh(true)
+    }, effectiveInterval)
 
     const countdownTimer = setInterval(() => {
-      if (pauseRef.current) return
-      setSecondsUntilRefresh((s) => (s <= 1 ? Math.ceil(intervalMs / 1000) : s - 1))
+      setSecondsUntilRefresh((s) => (s <= 1 ? Math.ceil(effectiveInterval / 1000) : s - 1))
     }, 1000)
 
     return () => {
       clearInterval(pollTimer)
       clearInterval(countdownTimer)
     }
-  }, [enabled, intervalMs, refresh])
+  }, [enabled, effectiveInterval, isHardPaused, refresh])
 
-  // Immediate refresh when pause lifts (agent finished working)
   const prevPause = useRef(pause)
   useEffect(() => {
     if (prevPause.current && !pause && enabled) {
@@ -86,6 +101,7 @@ export function useLivePoll(fetchFn, options = {}) {
     error,
     refresh,
     secondsUntilRefresh,
-    paused: pause,
+    paused: isHardPaused,
+    softPaused: isSoftPaused,
   }
 }

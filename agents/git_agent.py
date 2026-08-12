@@ -260,10 +260,29 @@ def setup_git_config(name: str = "AI Analytics Agent", email: str = "agent@ai-da
 
 
 if __name__ == "__main__":
-    console.print("[bold blue]🔀 Git Agent Test[/bold blue]")
-    init_repo()
-    setup_git_config()
-    log = get_commit_log()
-    console.print(f"Recent commits: {log}")
-    changed = get_changed_files()
-    console.print(f"Changed files: {changed}")
+    import argparse
+    import sys
+    import time
+
+    ROOT = Path(__file__).parent.parent
+    sys.path.insert(0, str(ROOT / "agents"))
+    from memory_manager import update_agent_status
+
+    parser = argparse.ArgumentParser(description="Git Agent")
+    parser.add_argument("--standby", action="store_true", help="Run standby loop for fleet supervisor")
+    args = parser.parse_args()
+
+    if args.standby:
+        console.print("[bold blue]Git Agent — standby mode[/bold blue]")
+        update_agent_status("git_agent", "running", "Standby - ready for commits")
+        while True:
+            time.sleep(30)
+            update_agent_status("git_agent", "running", "Standby - ready for commits")
+    else:
+        console.print("[bold blue]Git Agent Test[/bold blue]")
+        init_repo()
+        setup_git_config()
+        log = get_commit_log()
+        console.print(f"Recent commits: {log}")
+        changed = get_changed_files()
+        console.print(f"Changed files: {changed}")

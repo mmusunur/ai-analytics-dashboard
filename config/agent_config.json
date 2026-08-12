@@ -6,12 +6,35 @@
     "dynamic_workspace_routing": true,
     "policy": "When any task is added to a Plane sprint across ANY selected workspace or project, agents must pick it up immediately from memory/agent_state.json and operate with FULL PERMISSION to create files, modify code, run build steps, and execute unit/browser tests without asking user permission. The task MUST be completed end-to-end matching the exact task description."
   },
+  "multi_workspace": {
+    "enabled": true,
+    "primary_workspace_slug": "agentbuilder",
+    "workspace_slugs": ["agentbuilder"],
+    "auto_discover_new_workspaces": true,
+    "project_scope": "all",
+    "monitored_project_identifiers": ["AGENT", "AAD", "AGENTICOPS"],
+    "agent_pickup_groups": ["unstarted", "todo", "to_do", "triaged"]
+  },
+  "fleet_supervisor": {
+    "enabled": true,
+    "orchestrator_poll_interval_seconds": 30,
+    "watchdog_poll_interval_seconds": 15,
+    "sprint_watcher_interval_seconds": 60,
+    "auto_restart_idle_agents": true,
+    "daemons": ["orchestrator", "sprint_watcher", "memory", "git_agent"]
+  },
+  "sprint_quality_gate": {
+    "close_on_test_pass": true,
+    "verify_close_cooldown_seconds": 120,
+    "always_run_tests": true,
+    "verify_only_close_enabled": true
+  },
   "orchestrator": {
     "model": "claude-opus-4-5",
     "max_tokens": 8192,
     "temperature": 0.3,
-    "system_prompt": "You are the Orchestrator Agent for AgenticOps AI. Your role is to coordinate all other agents across selected Plane workspaces, break work into tasks, estimate complexity, and ensure quality with full autonomous execution.",
-    "tools": ["plane", "memory", "github", "spawn_agent"]
+    "system_prompt": "You are the Orchestrator Agent for AgenticOps AI. Coordinate all agents across multiple Plane workspaces, keep the fleet running, restart idle daemons, and ensure end-to-end task completion.",
+    "tools": ["plane", "memory", "github", "spawn_agent", "fleet_health"]
   },
   "builder": {
     "model": "claude-opus-4-5",
@@ -26,6 +49,14 @@
     "temperature": 0.1,
     "system_prompt": "You are the Tester Agent. You run unit tests with pytest and browser tests with Playwright autonomously. You report detailed results and clearly describe any failures so the Builder Agent can fix them.",
     "tools": ["terminal", "browser", "plane", "memory"]
+  },
+  "sprint_watcher": {
+    "model": "claude-haiku-4-5",
+    "max_tokens": 2048,
+    "temperature": 0.0,
+    "poll_interval_seconds": 60,
+    "system_prompt": "You are the Sprint Watcher Agent. Continuously poll Plane across all projects in the active workspace(s), queue actionable tasks, and drive the builder/tester pipeline without user intervention.",
+    "tools": ["plane", "subprocess", "memory"]
   },
   "plane_agent": {
     "model": "claude-haiku-4-5",
@@ -42,11 +73,14 @@
     "tools": ["terminal", "github", "memory"]
   },
   "memory": {
+    "model": "claude-haiku-4-5",
+    "max_tokens": 1024,
     "conversations_dir": "memory/conversations",
     "task_history_dir": "memory/task_history",
     "state_file": "memory/agent_state.json",
     "retention_days": 30,
-    "max_context_messages": 50
+    "max_context_messages": 50,
+    "daemon_heartbeat_seconds": 30
   },
   "eod_push_time": "18:00",
   "auto_test_on_save": true,

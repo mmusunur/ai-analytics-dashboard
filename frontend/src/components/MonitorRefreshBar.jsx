@@ -1,13 +1,15 @@
 /**
  * MonitorRefreshBar — shared status bar for Agent Monitor & Sprint Monitor pages.
  */
-import { RefreshCw, Pause, Radio, AlertCircle } from 'lucide-react'
+import { RefreshCw, Pause, Radio, AlertCircle, Zap } from 'lucide-react'
 
 export default function MonitorRefreshBar({
   title = 'Live Monitor',
   lastUpdated,
   isRefreshing,
   paused,
+  softPaused,
+  agentWorking,
   secondsUntilRefresh,
   error,
   onRefresh,
@@ -17,6 +19,14 @@ export default function MonitorRefreshBar({
     if (!d) return '—'
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   }
+
+  const statusLabel = paused
+    ? 'PAUSED'
+    : softPaused
+      ? `SLOW SYNC ${intervalLabel}`
+      : isRefreshing
+        ? 'REFRESHING…'
+        : `AUTO-REFRESH ${intervalLabel} · next in ${secondsUntilRefresh}s`
 
   return (
     <div
@@ -38,6 +48,8 @@ export default function MonitorRefreshBar({
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {paused ? (
             <Pause size={16} color="#f59e0b" />
+          ) : softPaused || agentWorking ? (
+            <Zap size={16} color="#a78bfa" />
           ) : isRefreshing ? (
             <RefreshCw size={16} color="#60a5fa" className="spin" />
           ) : (
@@ -52,11 +64,11 @@ export default function MonitorRefreshBar({
 
         <span style={{
           fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '20px',
-          background: paused ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.12)',
-          color: paused ? '#fbbf24' : '#34d399',
-          border: `1px solid ${paused ? 'rgba(245,158,11,0.35)' : 'rgba(16,185,129,0.3)'}`,
+          background: paused ? 'rgba(245,158,11,0.15)' : softPaused ? 'rgba(124,58,237,0.15)' : 'rgba(16,185,129,0.12)',
+          color: paused ? '#fbbf24' : softPaused ? '#c4b5fd' : '#34d399',
+          border: `1px solid ${paused ? 'rgba(245,158,11,0.35)' : softPaused ? 'rgba(124,58,237,0.35)' : 'rgba(16,185,129,0.3)'}`,
         }}>
-          {paused ? 'PAUSED — agent modifying code' : isRefreshing ? 'REFRESHING…' : `AUTO-REFRESH ${intervalLabel} · next in ${secondsUntilRefresh}s`}
+          {statusLabel}
         </span>
       </div>
 

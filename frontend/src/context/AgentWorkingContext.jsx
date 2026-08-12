@@ -47,12 +47,12 @@ export function AgentWorkingProvider({ children }) {
     }
 
     poll() // immediate first poll
-    const interval = setInterval(poll, 5000)
+    const interval = setInterval(poll, agentWorking ? 2000 : 5000)
     return () => {
       cancelled = true
       clearInterval(interval)
     }
-  }, [])
+  }, [agentWorking])
 
   return (
     <AgentWorkingContext.Provider value={{ agentWorking, agentWorkingTask, agentWorkingSince }}>

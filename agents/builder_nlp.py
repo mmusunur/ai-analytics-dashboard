@@ -9,6 +9,8 @@ import re
 import json
 from typing import Dict, List
 
+from agent_config_loader import get_agent_model, get_agent_max_tokens
+
 
 def classify_task_intent_with_llm(task_title: str, description: str) -> Dict:
     """
@@ -43,8 +45,8 @@ def classify_task_intent_with_llm(task_title: str, description: str) -> Dict:
                 "content-type": "application/json"
             }
             payload = {
-                "model": os.getenv("AGENT_MODEL", "claude-3-opus-20240229"),
-                "max_tokens": 512,
+                "model": get_agent_model("builder"),
+                "max_tokens": min(get_agent_max_tokens("builder"), 512),
                 "messages": [{"role": "user", "content": prompt}]
             }
             resp = httpx.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload, timeout=15.0)

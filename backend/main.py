@@ -15,7 +15,7 @@ ROOT_DIR = Path(__file__).parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from routers import data, analytics, charts, sprints
+from routers import data, analytics, charts, sprints, mcp
 
 load_dotenv()
 
@@ -44,6 +44,7 @@ app.include_router(data.router, prefix="/api/data", tags=["Data"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(charts.router, prefix="/api/charts", tags=["Charts"])
 app.include_router(sprints.router, prefix="/api/sprints", tags=["Sprints"])
+app.include_router(mcp.router, prefix="/api/mcp", tags=["MCP"])
 
 
 # ── Warehouse Statistics Endpoint (AAD-5 Specification) ─────────────────────────
@@ -78,7 +79,7 @@ def warehouse_statistics(
 # ── Agents Status Endpoint ───────────────────────────────────────────────────────
 @app.get("/api/agents/status", tags=["Agents"])
 def get_agents_status():
-    from agents.memory_manager import get_dynamic_agent_statuses, load_state, get_pipeline_status, is_agent_working
+    from agents.memory_manager import get_dynamic_agent_statuses, load_state, get_pipeline_status, is_agent_working, get_task_queue
     try:
         dynamic_agents = get_dynamic_agent_statuses()
         state = load_state()
@@ -88,6 +89,7 @@ def get_agents_status():
             "agents": dynamic_agents,
             "last_active": state.get("last_active"),
             "pipeline": pipeline,
+            "task_queue": get_task_queue(),
             "agent_working": is_agent_working(),
             "agent_working_task": state.get("agent_working_task", ""),
             "agent_working_since": state.get("agent_working_since"),
@@ -100,6 +102,7 @@ def get_agents_status():
             "agents": state.get("agents", {}),
             "last_active": state.get("last_active"),
             "pipeline": state.get("pipeline", {}),
+            "task_queue": state.get("task_queue", {}),
             "agent_working": state.get("agent_working", False),
             "agent_working_task": state.get("agent_working_task", ""),
             "agent_working_since": state.get("agent_working_since"),

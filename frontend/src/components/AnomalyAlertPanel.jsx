@@ -12,7 +12,7 @@ export default function AnomalyAlertPanel({ globalDate, globalTargetDb = 'pg_dev
     setLoading(true);
     try {
       const oerdte = globalDate ? globalDate.replace(/-/g, '') : '';
-      const res = await axios.get(`${API}/api/analytics/anomalies?target_db=${globalTargetDb}&oerdte=${oerdte}&oewhse=${selectedWhse || ''}`);
+      const res = await axios.get(`${API}/api/analytics/anomalies?target_db=${globalTargetDb}&oerdte=${oerdte}&oewhse=${selectedWhse || ''}`, { timeout: 12000 });
       setAnomalies(res.data.anomalies || []);
     } catch (err) {
       console.error('[AnomalyAlertPanel] Error fetching anomalies:', err);
