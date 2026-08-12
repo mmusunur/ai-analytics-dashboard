@@ -50,6 +50,7 @@ REPO_IGNORE_PATTERNS = (
     "memory/agent_state.json", "memory/.processed_task_ids.json",
     "memory/.retry_context_", "memory/task_history/",
     "node_modules/", ".env",  # secrets / deps
+    "~$",  # Office temp lock files
 )
 
 
@@ -187,7 +188,17 @@ def commit_and_push_for_task(task_title: str, task_id: str = "") -> dict:
 
     pushed = False
     if GITHUB_REPO:
-        pushed = push()
+        branch = os.getenv("GIT_DEFAULT_BRANCH", "main")
+        # Stash dirty non-staged work so pull --rebase can run (Task 7)
+        status_out, _, _ = _run_git(["status", "--porcelain"])
+        stashed = False
+        if status_out.strip():
+            _run_git(["stash", "push", "-m", "agent-git-gate-autostash", "--keep-index"])
+            stashed = True
+        pull(branch, rebase=True)
+        if stashed:
+            _run_git(["stash", "pop"])
+        pushed = push(branch)
         if not pushed:
             return {
                 "ok": False,
@@ -289,9 +300,12 @@ def push(branch: str = "main", force: bool = False) -> bool:
         return False
 
 
-def pull(branch: str = "main") -> bool:
+def pull(branch: str = "main", rebase: bool = True) -> bool:
     """Pull latest changes from remote origin."""
-    stdout, stderr, code = _run_git(["pull", "origin", branch])
+    cmd = ["pull", "origin", branch]
+    if rebase:
+        cmd.insert(1, "--rebase")
+    stdout, stderr, code = _run_git(cmd)
     if code == 0:
         console.print(f"[bold green]📥 Pulled latest changes from origin/{branch}[/bold green]")
         return True
