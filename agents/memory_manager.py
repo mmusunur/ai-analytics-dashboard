@@ -114,6 +114,7 @@ BUILD_PROGRESS_KEYS = (
 def _carry_build_fields(pipeline: dict, prev: dict, task_id: str, phase: str) -> None:
     """Keep build popup data for the active task from Build through Done."""
     if not task_id or task_id != prev.get("task_id"):
+        _merge_build_snapshot(pipeline, task_id)
         return
     for key in BUILD_DETAIL_KEYS:
         if key in prev:
@@ -122,6 +123,46 @@ def _carry_build_fields(pipeline: dict, prev: dict, task_id: str, phase: str) ->
         for key in BUILD_PROGRESS_KEYS:
             if key in prev:
                 pipeline[key] = prev[key]
+    _merge_build_snapshot(pipeline, task_id)
+
+
+def _persist_build_snapshot(task_id: str, pipeline: dict) -> None:
+    """Store build detail per task so UI survives phase transitions and idle reset."""
+    if not task_id:
+        return
+    snap = {}
+    for key in (*BUILD_DETAIL_KEYS, *BUILD_PROGRESS_KEYS):
+        if key in pipeline and pipeline[key] not in (None, "", []):
+            snap[key] = pipeline[key]
+    if not snap:
+        return
+    state = load_state()
+    snapshots = dict(state.get("build_snapshots_by_task") or {})
+    snapshots[task_id] = {
+        **snapshots.get(task_id, {}),
+        **snap,
+        "task_title": pipeline.get("task_title") or snapshots.get(task_id, {}).get("task_title", ""),
+        "updated_at": datetime.now().isoformat(),
+    }
+    # Keep last 20 tasks
+    if len(snapshots) > 20:
+        for old_id in list(snapshots.keys())[:-20]:
+            snapshots.pop(old_id, None)
+    state["build_snapshots_by_task"] = snapshots
+    save_state(state)
+
+
+def _merge_build_snapshot(pipeline: dict, task_id: str) -> None:
+    """Fill missing build detail from per-task snapshot (Testing/Close/Done/idle)."""
+    if not task_id:
+        return
+    snapshots = load_state().get("build_snapshots_by_task") or {}
+    snap = snapshots.get(task_id)
+    if not snap:
+        return
+    for key in BUILD_DETAIL_KEYS:
+        if not pipeline.get(key) and snap.get(key) not in (None, "", []):
+            pipeline[key] = snap[key]
 
 
 def set_pipeline_status(
@@ -178,9 +219,12 @@ def reset_pipeline_steps(task_id: str = "", task_title: str = "") -> None:
     """Clear completed step markers when a new pickup cycle starts."""
     state = load_state()
     pipeline = state.get("pipeline") or {}
+    prev_task = pipeline.get("task_id")
     pipeline["completed_steps"] = []
-    for key in (*BUILD_DETAIL_KEYS, *BUILD_PROGRESS_KEYS):
-        pipeline.pop(key, None)
+    # Only wipe build detail when picking up a different task (retries keep last build info).
+    if task_id and prev_task and task_id != prev_task:
+        for key in (*BUILD_DETAIL_KEYS, *BUILD_PROGRESS_KEYS):
+            pipeline.pop(key, None)
     if task_id:
         pipeline["task_id"] = task_id
     if task_title:
@@ -205,14 +249,26 @@ def rewind_pipeline_to_step(keep_through: str = "pickup") -> None:
 
 def get_pipeline_status() -> dict:
     state = load_state()
-    return state.get("pipeline") or {
+    pipeline = dict(state.get("pipeline") or {
         "phase": "idle",
         "task_id": "",
         "task_title": "",
         "active_agent": "",
         "message": "No active sprint task",
         "updated_at": None,
-    }
+    })
+    tid = pipeline.get("task_id")
+    if tid:
+        _merge_build_snapshot(pipeline, tid)
+    return pipeline
+
+
+def get_build_snapshot(task_id: str) -> dict:
+    """Build detail for a task (popup + delivery notice)."""
+    if not task_id:
+        return {}
+    snapshots = load_state().get("build_snapshots_by_task") or {}
+    return dict(snapshots.get(task_id) or {})
 
 
 TEST_SUBPHASE_PROGRESS = {
@@ -241,6 +297,8 @@ def update_build_progress(
     task_title: str = "",
     files_modified: list | None = None,
     build_outcome: str = "",
+    intents: list | None = None,
+    already_applied: bool = False,
 ) -> None:
     """Heartbeat during Build — UI shows sub-phase, elapsed time, files touched."""
     state = load_state()
@@ -257,6 +315,17 @@ def update_build_progress(
         pipeline["build_files_modified"] = files_modified
     if build_outcome:
         pipeline["build_outcome"] = build_outcome
+    if intents is not None:
+        pipeline["build_intents"] = list(intents)
+    intent_list = pipeline.get("build_intents") or intents or []
+    real_files = pipeline.get("build_files_modified") or []
+    if intent_list and subphase in ("classifying", "spec_load", "patching", "unit_verify", "done"):
+        pipeline["build_functionality"] = _build_functionality_lines(
+            intent_list, real_files, already_applied,
+        )
+        pipeline["build_usage_guide"] = _build_usage_guide(
+            intent_list, real_files, task_title or pipeline.get("task_title", ""), already_applied,
+        )
     if task_id:
         pipeline["task_id"] = task_id
     if task_title:
@@ -265,6 +334,7 @@ def update_build_progress(
     save_state(state)
     tid = pipeline.get("task_id") or task_id
     if tid:
+        _persist_build_snapshot(tid, pipeline)
         update_queue_progress(tid, "building", "builder", message)
 
 
@@ -496,6 +566,8 @@ def record_build_result(
     pipeline["updated_at"] = datetime.now().isoformat()
     state["pipeline"] = pipeline
     save_state(state)
+    if task_id:
+        _persist_build_snapshot(task_id, pipeline)
     log_task_result(
         task_id or "BUILD",
         task_title or "Build gate",
@@ -527,10 +599,14 @@ def update_test_progress(
         pipeline["task_id"] = task_id
     if task_title:
         pipeline["task_title"] = task_title
+    for key in BUILD_DETAIL_KEYS:
+        if key in pipeline:
+            pass  # keep merged build fields during test heartbeats
     state["pipeline"] = pipeline
     save_state(state)
     tid = pipeline.get("task_id") or task_id
     if tid:
+        _persist_build_snapshot(tid, pipeline)
         update_queue_progress(tid, "testing", "tester", message)
 
 
@@ -643,6 +719,9 @@ def complete_queue_task(task_id: str, task_title: str, duration_seconds: float =
     delivery = None
     if pipeline.get("task_id") == task_id and pipeline.get("build_usage_guide"):
         delivery = pipeline["build_usage_guide"]
+    if not delivery:
+        snap = get_build_snapshot(task_id)
+        delivery = snap.get("build_usage_guide")
     entry = {
         "id": task_id,
         "title": task_title,
