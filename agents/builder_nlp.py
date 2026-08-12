@@ -36,7 +36,7 @@ def classify_task_intent_with_llm(task_title: str, description: str) -> Dict:
                 f"  MULTI_TARGET_DATABASE_ARCHITECTURE, SPRINT_AGENT_FIX,\n"
                 f"  UI_PERFORMANCE_AND_REFRESH, ROUTE_AND_NAVIGATION_FIX,\n"
                 f"  BACKEND_QUERY_FIX, API_ENDPOINT_FIX, TEST_COVERAGE_AND_EXCEL,\n"
-                f"  DATA_ANALYTICS_ML, ADDITIONAL_FEATURES\n"
+                f"  DATA_ANALYTICS_ML\n"
                 f"- 'target_files': list of repo-relative file paths to modify\n"
                 f"- 'action_summary': concise one-line description of the code change needed\n"
             )
@@ -131,19 +131,6 @@ def classify_task_intent_with_llm(task_title: str, description: str) -> Dict:
             "backend/routers/data.py",
             "backend/routers/analytics.py",
             "tests/unit/test_dataanalytics.py",
-        ]
-
-    # --- Category 3c: Additional Features panel --------------------------------
-    if any(p in text_clean for p in [
-        "additional features", "aditional features", "add features", "extra features",
-        "new feature panel", "feature panel",
-    ]):
-        intents.append("ADDITIONAL_FEATURES")
-        actions.append("BUILD_ADDITIONAL_FEATURES_DASHBOARD_PANEL")
-        target_files += [
-            "frontend/src/components/AddAditionalFeatures.jsx",
-            "frontend/src/pages/Dashboard.jsx",
-            "tests/unit/test_addaditionalfeatures.py",
         ]
 
     # --- Category 4: Anomaly & Scratch Quantity -------------------------------

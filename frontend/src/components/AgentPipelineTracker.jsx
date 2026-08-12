@@ -257,10 +257,18 @@ export default function AgentPipelineTracker({ pipeline, agentWorking, agentWork
 
   const isMonitoringIdle = phase === 'idle' && !taskTitle && !pipeline?.task_id
 
+  const phaseStepIndex = {
+    idle: -1, pickup: 0, building: 1, retry: 1, testing: 2, closing: 3, git_push: 4, done: 5, failed: -1,
+  }
+  const stepIndex = { pickup: 0, building: 1, testing: 2, closing: 3, git_push: 4, done: 5 }
+  const currentStepIdx = phaseStepIndex[normalizePhase(phase)] ?? -1
+
   const isStepComplete = (key) => {
     if (isMonitoringIdle) return false
     if (phase === 'done') return true
-    return completedSteps.has(key)
+    if (completedSteps.has(key)) return true
+    const idx = stepIndex[key] ?? -1
+    return currentStepIdx >= 0 && idx >= 0 && currentStepIdx > idx
   }
 
   const hasBuildDetail = Boolean(
@@ -481,6 +489,8 @@ export default function AgentPipelineTracker({ pipeline, agentWorking, agentWork
           return (
             <div
               key={p.key}
+              data-testid={`pipeline-step-${p.key}`}
+              data-step-complete={isStepComplete(p.key) ? 'true' : 'false'}
               role={buildStepClickable && p.key === 'building' ? 'button' : undefined}
               tabIndex={buildStepClickable && p.key === 'building' ? 0 : undefined}
               onClick={p.key === 'building' && buildStepClickable ? () => setBuildDetailOpen(true) : undefined}

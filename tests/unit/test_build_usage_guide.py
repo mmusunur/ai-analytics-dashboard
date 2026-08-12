@@ -8,19 +8,6 @@ sys.path.insert(0, str(ROOT / "agents"))
 from memory_manager import _build_usage_guide, format_delivery_comment
 
 
-def test_additional_features_usage_guide():
-    guide = _build_usage_guide(
-        ["ADDITIONAL_FEATURES"],
-        ["frontend/src/components/AddAditionalFeatures.jsx", "frontend/src/pages/Dashboard.jsx"],
-        "Add Aditional Features",
-        False,
-    )
-    assert guide["route"] == "/"
-    assert "Dashboard" in guide["where"]
-    assert len(guide["steps"]) >= 2
-    assert "Add Aditional Features" in guide["headline"] or "Additional" in guide["headline"]
-
-
 def test_data_analytics_usage_guide():
     guide = _build_usage_guide(
         ["DATA_ANALYTICS_ML"],
@@ -29,11 +16,24 @@ def test_data_analytics_usage_guide():
         False,
     )
     assert guide["route"] == "/"
-    assert any("Upload" in s or "Train" in s for s in guide["steps"])
+    assert "Dashboard" in guide["where"]
+    assert len(guide["steps"]) >= 2
+    assert any("Upload" in s or "Train" in s or "Analytics" in s for s in guide["steps"])
+
+
+def test_copilot_usage_guide():
+    guide = _build_usage_guide(
+        ["AI_COPILOT_DATE_AGNOSTIC_QUERY"],
+        ["frontend/src/components/AiDataCopilot.jsx"],
+        "AI Copilot",
+        False,
+    )
+    assert guide["route"] == "/"
+    assert "Copilot" in guide["headline"] or "copilot" in guide["headline"].lower()
 
 
 def test_delivery_comment_includes_steps():
-    guide = _build_usage_guide(["ADDITIONAL_FEATURES"], [], "Test Task", False)
+    guide = _build_usage_guide(["DATA_ANALYTICS_ML"], [], "Test Task", False)
     text = format_delivery_comment(guide)
     assert "Where:" in text or "**Where:**" in text
     assert "How to use" in text

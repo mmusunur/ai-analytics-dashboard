@@ -108,8 +108,14 @@ export default function SprintBoard() {
     enabled: true,
   })
 
-  const pipeline = fleetData?.pipeline || {}
-  const taskQueue = fleetData?.task_queue || {}
+  const [staleFleetData, setStaleFleetData] = useState(null)
+  useEffect(() => {
+    if (fleetData) setStaleFleetData(fleetData)
+  }, [fleetData])
+  const displayFleetData = fleetData || staleFleetData
+
+  const pipeline = displayFleetData?.pipeline || {}
+  const taskQueue = displayFleetData?.task_queue || {}
   const [dismissedDeliveryId, setDismissedDeliveryId] = useState(null)
 
   const latestDelivery = useMemo(() => {
@@ -141,10 +147,30 @@ export default function SprintBoard() {
     for (const t of taskQueue?.failed || []) {
       m[t.id] = { ...t, queue_status: 'failed', phase: 'failed' }
     }
+    // Pipeline is source of truth for the live task — overrides stale queue completed badge
+    const pid = pipeline?.task_id
+    const pphase = pipeline?.phase
+    const pipelineLive = pid && pphase && !['idle', 'done', 'failed'].includes(pphase)
+    if (pipelineLive) {
+      m[pid] = {
+        id: pid,
+        title: pipeline.task_title,
+        queue_status: 'active',
+        phase: pphase,
+        progress_pct: pipeline.progress_pct ?? 0,
+        active_agent: pipeline.active_agent,
+        message: pipeline.message,
+      }
+    }
     return m
-  }, [taskQueue])
+  }, [taskQueue, pipeline])
   const watcherActive = (fleetData?.agents?.sprint_watcher?.status || 'running') === 'running'
-  const loading = tasksInitialLoad && !sprintData
+  const [staleSprintData, setStaleSprintData] = useState(null)
+  useEffect(() => {
+    if (sprintData?.tasks) setStaleSprintData(sprintData)
+  }, [sprintData])
+  const displaySprintData = sprintData || staleSprintData
+  const loading = tasksInitialLoad && !displaySprintData
   const error = tasksError
 
   // Detect sprint expiry whenever sprint data changes
@@ -238,15 +264,28 @@ export default function SprintBoard() {
     low: { bg: 'rgba(107, 114, 128, 0.15)', text: '#9ca3af', border: 'rgba(107, 114, 128, 0.4)' }
   }
 
-  const allTasks = sprintData?.tasks?.all || []
+  const allTasks = displaySprintData?.tasks?.all || []
+  const pipelineLiveId = pipeline?.task_id && pipeline?.phase && !['idle', 'done', 'failed'].includes(pipeline.phase)
+    ? pipeline.task_id
+    : null
+
+  const excludeLiveFrom = (list) => (pipelineLiveId ? list.filter((t) => t.id !== pipelineLiveId) : list)
+
   // Explicitly filter backlog to never contain cancelled tasks (defensive guard)
-  const backlogTasks = (sprintData?.tasks?.backlog || []).filter(
+  const backlogTasks = excludeLiveFrom(displaySprintData?.tasks?.backlog || []).filter(
     t => !['cancelled', 'wont_fix', 'rejected'].includes((t.state_group || '').toLowerCase())
   )
-  const todoTasks = sprintData?.tasks?.todo || []
-  const inProgressTasks = sprintData?.tasks?.in_progress || []
-  const completedTasks = sprintData?.tasks?.completed || []
-  const cancelledTasks = sprintData?.tasks?.cancelled || []
+  const todoTasks = excludeLiveFrom(displaySprintData?.tasks?.todo || [])
+  const inProgressTasks = displaySprintData?.tasks?.in_progress || []
+  const completedTasks = excludeLiveFrom(displaySprintData?.tasks?.completed || [])
+  const cancelledTasks = displaySprintData?.tasks?.cancelled || []
+
+  const augmentedInProgress = useMemo(() => {
+    if (!pipelineLiveId) return inProgressTasks
+    if (inProgressTasks.some((t) => t.id === pipelineLiveId)) return inProgressTasks
+    const fromAll = allTasks.find((t) => t.id === pipelineLiveId)
+    return fromAll ? [fromAll, ...inProgressTasks] : inProgressTasks
+  }, [inProgressTasks, pipelineLiveId, allTasks])
 
   const filterFn = (task) => {
     const matchesSearch = task.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -258,10 +297,10 @@ export default function SprintBoard() {
 
   const filteredBacklog = backlogTasks.filter(filterFn)
   const filteredTodo = todoTasks.filter(filterFn)
-  const filteredInProgress = inProgressTasks.filter(filterFn)
+  const filteredInProgress = augmentedInProgress.filter(filterFn)
   const filteredCompleted = completedTasks.filter(filterFn)
 
-  const sprintInfo = sprintData?.sprint || {
+  const sprintInfo = displaySprintData?.sprint || {
     name: 'Sprint AAD-5 · Multi-Project Sprint Board',
     total_tasks: allTasks.length,
     open_tasks: allTasks.length - cancelledTasks.length,
@@ -623,7 +662,7 @@ export default function SprintBoard() {
       {/* ── 4-Column Multi-Project Sprint Kanban Board ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
         {/* Column 1: Backlog */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px' }}>
+        <div data-testid="sprint-column-backlog" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Inbox size={16} color="#94a3b8" /> Backlog
@@ -665,7 +704,7 @@ export default function SprintBoard() {
         </div>
 
         {/* Column 3: In Progress */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: '12px', padding: '16px' }}>
+        <div data-testid="sprint-column-in-progress" style={{ background: 'var(--bg-card)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: '12px', padding: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <span style={{ fontSize: '14px', fontWeight: 700, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <PlayCircle size={16} color="#c4b5fd" /> In Progress (Agent Active)
@@ -680,7 +719,16 @@ export default function SprintBoard() {
                 No active in-progress tasks
               </div>
             ) : (
-              filteredInProgress.map(task => <TaskCard key={task.id} task={task} colors={priorityColors} isProgress queueInfo={queueMap[task.id]} />)
+              filteredInProgress.map(task => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  colors={priorityColors}
+                  isProgress
+                  queueInfo={queueMap[task.id]}
+                  pipelinePhase={pipeline?.phase}
+                />
+              ))
             )}
           </div>
         </div>
@@ -710,11 +758,11 @@ export default function SprintBoard() {
   )
 }
 
-function TaskCard({ task, colors, isProgress, isDone, queueInfo }) {
+function TaskCard({ task, colors, isProgress, isDone, queueInfo, pipelinePhase }) {
   const pStyle = colors[(task.priority || 'medium').toLowerCase()] || colors.medium
   const qStatus = queueInfo?.queue_status
   const progress = queueInfo?.progress_pct ?? 0
-  const phaseLabel = queueInfo?.phase?.replace(/_/g, ' ')
+  const phaseLabel = (queueInfo?.phase || pipelinePhase || '').replace(/_/g, ' ')
 
   const statusColors = {
     active: { bg: 'rgba(124,58,237,0.2)', text: '#c4b5fd', label: `⚡ ${phaseLabel || 'working'}` },
@@ -722,7 +770,7 @@ function TaskCard({ task, colors, isProgress, isDone, queueInfo }) {
     completed: { bg: 'rgba(16,185,129,0.15)', text: '#34d399', label: '✓ Agent done' },
     failed: { bg: 'rgba(239,68,68,0.15)', text: '#f87171', label: '↩ Returned to To Do' },
   }
-  const sc = statusColors[qStatus]
+  const sc = qStatus === 'active' ? statusColors.active : (isDone ? statusColors.completed : statusColors[qStatus])
 
   return (
     <div style={{

@@ -83,6 +83,7 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 | **42** | [`task_42_build_detail_popup_end_to_end.md`](tasks/task_42_build_detail_popup_end_to_end.md) | **Build detail popup** — files + functionality persist from Build through Done for the current task; cleared only on idle/new pickup |
 | **43** | [`task_43_demo_readiness_zero_manual.md`](tasks/task_43_demo_readiness_zero_manual.md) | **Demo readiness** — zero manual intervention; servers up, git gate demo-friendly, pipeline resets idle after Done |
 | **44** | [`task_44_user_delivery_notice.md`](tasks/task_44_user_delivery_notice.md) | **User delivery notice** — after each task: what was added, where to find it, how to use it (UI banner + Build popup + Plane comment) |
+| **45** | [`task_45_sprint_board_ux_consistency.md`](tasks/task_45_sprint_board_ux_consistency.md) | **Sprint Board UX** — active task in In Progress (not Backlog), refresh stability, pipeline step checkmarks, feature panel discoverability |
 
 9. **README sync (Task 39)** — after agent or architecture changes: update `tasks.md` index + `README.md` (features, agent table, pipeline table, latest task numbers). Included in git allowlist.
 10. **Daily memory recall (Task 40)** — agents check previous-day logs in `memory/task_history/` so tomorrow's session knows what completed, failed, or stayed In Progress.
@@ -90,6 +91,7 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 12. **Build detail persistence (Task 42)** — `set_pipeline_status()` MUST carry `build_files_modified`, `build_functionality`, `build_outcome`, and `build_intents` for the **same task_id** through Test → Close → Git → Done. Popup stays populated until pipeline goes idle or a new task is picked up.
 13. **Demo readiness (Task 43)** — Before demo: all unit tests pass; servers + watcher running; `GIT_PUSH_OPTIONAL=true` for local-commit git gate; pipeline returns to **idle** after Done; builder auto-wires components to Dashboard.
 14. **User delivery notice (Task 44)** — After Build/Close, agent MUST tell the user **what was added**, **where to open it** (route link), and **how to use it** — Sprint Board banner, Build popup, Recently Completed list, and Plane task comment.
+15. **Sprint Board UX (Task 45)** — Pipeline-live task MUST show in **In Progress** (never Backlog with stale "Agent done"). Refresh keeps last-known data visible. Prior steps (Pickup, Build) show ✓ during Test. Delivered features have stable Dashboard panel id for tests and delivery guide.
 
 ---
 
@@ -153,6 +155,7 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 - 📄 [`tasks/task_42_build_detail_popup_end_to_end.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_42_build_detail_popup_end_to_end.md) — **Build Detail Popup:** Files + functionality persist from Build through Done for current task; cleared on idle/new pickup
 - 📄 [`tasks/task_43_demo_readiness_zero_manual.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_43_demo_readiness_zero_manual.md) — **Demo Readiness:** Zero manual intervention — servers, watcher, git gate, pipeline idle reset, builder Dashboard wiring
 - 📄 [`tasks/task_44_user_delivery_notice.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_44_user_delivery_notice.md) — **User Delivery Notice:** What was added, where to find it, how to use it — UI + Plane comment
+- 📄 [`tasks/task_45_sprint_board_ux_consistency.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_45_sprint_board_ux_consistency.md) — **Sprint Board UX:** Column placement, refresh stability, pipeline checkmarks, feature discoverability
 
 ---
 

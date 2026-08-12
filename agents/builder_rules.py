@@ -134,16 +134,6 @@ def apply_rule_based_fixes(root_dir: Path, task_title: str, description: str, in
         if modified:
             return modified
 
-    if "ADDITIONAL_FEATURES" in intents or re.search(r"additional features|aditional features", text):
-        from builder_helpers import build_dynamic_component, wire_component_to_dashboard
-        comp_name = build_dynamic_component(root_dir, task_title, description)
-        if comp_name:
-            modified.append(f"{comp_name}.jsx")
-            if wire_component_to_dashboard(root_dir, comp_name):
-                modified.append("Dashboard.jsx")
-        if modified:
-            return modified
-
     # General fallback: scaffold a component + unit test when nothing else matched
     if not modified:
         from builder_helpers import build_dynamic_component, wire_component_to_dashboard

@@ -6,7 +6,6 @@ import WarehouseSalesAnalytics from '../components/WarehouseSalesAnalytics'
 import AiDataCopilot from '../components/AiDataCopilot'
 import AnomalyAlertPanel from '../components/AnomalyAlertPanel'
 import DataAnalytics from '../components/DataAnalytics'
-import AddAditionalFeatures from '../components/AddAditionalFeatures'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ScatterChart, Scatter, Cell
@@ -426,9 +425,6 @@ export default function Dashboard() {
         selectedWhse={tableFilters?.whse || tableFilters?.whs_num || ''}
         onApplyFilter={handleApplyTableFilter}
       />
-
-      {/* ── Add Aditional Features — sprint task panel ── */}
-      <AddAditionalFeatures />
 
       {/* ── Data Analytics — CSV/Excel upload + ML training on dashboard ── */}
       <DataAnalytics />

@@ -186,6 +186,22 @@ def set_pipeline_status(
         "completed_steps": [] if phase == "idle" and not task_id else prev.get("completed_steps", []),
     }
     _carry_build_fields(pipeline, prev, task_id, phase)
+    # Infer step checkmarks when entering Test+ (heartbeats may drop completed_steps).
+    if phase in ("testing", "closing", "git_push", "done") and task_id:
+        steps = list(pipeline.get("completed_steps") or [])
+        for step in ("pickup", "building"):
+            if step not in steps:
+                steps.append(step)
+        if phase in ("closing", "git_push", "done"):
+            if "testing" not in steps:
+                steps.append("testing")
+        if phase in ("git_push", "done"):
+            if "closing" not in steps:
+                steps.append("closing")
+        if phase == "done":
+            if "git_push" not in steps:
+                steps.append("git_push")
+        pipeline["completed_steps"] = steps
     state["pipeline"] = pipeline
     if phase == "testing" and prev.get("test_started_at"):
         state["pipeline"]["test_started_at"] = prev["test_started_at"]
@@ -305,6 +321,7 @@ def update_build_progress(
     """Heartbeat during Build — UI shows sub-phase, elapsed time, files touched."""
     state = load_state()
     pipeline = dict(state.get("pipeline") or {})
+    prev_steps = list(pipeline.get("completed_steps") or [])
     if not pipeline.get("build_started_at"):
         pipeline["build_started_at"] = datetime.now().isoformat()
     pipeline["phase"] = "building"
@@ -332,6 +349,8 @@ def update_build_progress(
         pipeline["task_id"] = task_id
     if task_title:
         pipeline["task_title"] = task_title
+    if prev_steps:
+        pipeline["completed_steps"] = prev_steps
     state["pipeline"] = pipeline
     save_state(state)
     tid = pipeline.get("task_id") or task_id
@@ -363,7 +382,6 @@ BUILD_INTENT_LABELS = {
     "WAREHOUSE_TABLE": "Warehouse sales table and filters",
     "KPI_CARDS": "Executive KPI summary cards",
     "CHARTS": "Bar / scatter chart components",
-    "ADDITIONAL_FEATURES": "Additional dashboard features panel (AddAditionalFeatures)",
 }
 
 # Where + how users find agent-delivered functionality (Task 44).
@@ -377,17 +395,6 @@ BUILD_USAGE_GUIDES = {
             "Go to Dashboard (home page)",
             "Find the “Data Analytics” card below the anomaly alerts",
             "Upload a CSV or Excel file, then click Train to run the model",
-        ],
-    },
-    "ADDITIONAL_FEATURES": {
-        "headline": "Additional Features panel added to the dashboard",
-        "where": "Dashboard — “Add Aditional Features” card with status metrics",
-        "route": "/",
-        "route_label": "Open Dashboard",
-        "steps": [
-            "Open the main Dashboard",
-            "Scroll to the “Add Aditional Features” section",
-            "Review the new metrics/status widgets added by the agent",
         ],
     },
     "NAVBAR_AND_SIDEBAR_NAVIGATION": {
@@ -556,6 +563,7 @@ def record_build_result(
     """Persist build outcome so UI distinguishes real code changes vs verify-only."""
     state = load_state()
     pipeline = dict(state.get("pipeline") or {})
+    prev_steps = list(pipeline.get("completed_steps") or [])
     real_files = [f for f in (files_modified or []) if f != "already_applied"]
     outcome = "verify_only" if already_applied or not real_files else "code_changed"
     pipeline["build_outcome"] = outcome
@@ -566,6 +574,8 @@ def record_build_result(
     pipeline["build_usage_guide"] = _build_usage_guide(intents or [], real_files, task_title, already_applied)
     pipeline["build_detail_updated_at"] = datetime.now().isoformat()
     pipeline["updated_at"] = datetime.now().isoformat()
+    if prev_steps:
+        pipeline["completed_steps"] = prev_steps
     state["pipeline"] = pipeline
     save_state(state)
     if task_id:
@@ -589,6 +599,7 @@ def update_test_progress(
     """Heartbeat during long Test runs — UI shows sub-phase + elapsed time."""
     state = load_state()
     pipeline = dict(state.get("pipeline") or {})
+    prev_steps = list(pipeline.get("completed_steps") or [])
     tid = task_id or pipeline.get("task_id")
     if tid:
         _merge_build_snapshot(pipeline, tid)
@@ -604,6 +615,11 @@ def update_test_progress(
         pipeline["task_id"] = task_id
     if task_title:
         pipeline["task_title"] = task_title
+    steps = list(prev_steps)
+    for step in ("pickup", "building"):
+        if step not in steps:
+            steps.append(step)
+    pipeline["completed_steps"] = steps
     state["pipeline"] = pipeline
     save_state(state)
     tid = pipeline.get("task_id") or task_id
@@ -705,7 +721,20 @@ def update_queue_progress(
     queue = get_task_queue()
     active = queue.get("active") or {}
     if active.get("id") != task_id:
-        return
+        pl = load_state().get("pipeline") or {}
+        if pl.get("task_id") == task_id:
+            active = {
+                "id": task_id,
+                "title": pl.get("task_title", "Active task"),
+                "phase": phase,
+                "progress_pct": PHASE_PROGRESS.get(phase, 0),
+                "active_agent": active_agent or pl.get("active_agent", ""),
+                "message": message or pl.get("message", ""),
+                "started_at": datetime.now().isoformat(),
+            }
+            queue["completed"] = [t for t in queue.get("completed", []) if t.get("id") != task_id]
+        else:
+            return
     active["phase"] = phase
     active["progress_pct"] = PHASE_PROGRESS.get(phase, active.get("progress_pct", 0))
     active["active_agent"] = active_agent

@@ -62,7 +62,7 @@ def test_build_snapshot_survives_testing_phase(tmp_path, monkeypatch):
             "build_outcome": "code_changed",
             "build_files_modified": ["Foo.jsx"],
             "build_functionality": ["Foo added"],
-            "build_intents": ["ADDITIONAL_FEATURES"],
+            "build_intents": ["FOO_INTENT"],
             "build_usage_guide": {"headline": "Foo", "route": "/"},
         }
     })
