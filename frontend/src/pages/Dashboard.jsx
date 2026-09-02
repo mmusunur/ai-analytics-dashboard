@@ -1,3 +1,4 @@
+import TrainingTheCsvData from '../components/TrainingTheCsvData'
 import TrainTheUploadedTheCsvFileAndShowTheAnalytics from '../components/TrainTheUploadedTheCsvFileAndShowTheAnalytics'
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
@@ -429,6 +430,9 @@ export default function Dashboard() {
 
       {/* ── TrainTheUploadedTheCsvFileAndShowTheAnalytics sprint feature ── */}
       <TrainTheUploadedTheCsvFileAndShowTheAnalytics />
+
+      {/* ── TrainingTheCsvData sprint feature ── */}
+      <TrainingTheCsvData />
 
       <DataAnalytics />
 
