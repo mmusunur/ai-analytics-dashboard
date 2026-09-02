@@ -358,7 +358,6 @@ def sync_with_remote(branch: str = "main") -> bool:
     _, stderr, code = _run_git(["rebase", f"origin/{branch}"])
     if code == 0:
         return True
-    console.print(f"[yellow]⚠️ Rebase onto origin/{branch} failed: {stderr}[/yellow]")
     _run_git(["rebase", "--abort"])
     return pull(branch, rebase=True)
 
