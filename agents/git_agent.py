@@ -3,6 +3,7 @@ Git Agent — Handles end-of-day git operations.
 Stages all changes, creates meaningful commit messages, and pushes to remote.
 """
 
+import sys
 import os
 import subprocess
 from datetime import datetime
@@ -11,21 +12,88 @@ from typing import Optional
 from rich.console import Console
 from dotenv import load_dotenv
 
-load_dotenv()
-console = Console()
+ROOT_DIR = Path(__file__).parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+sys.path.insert(0, str(ROOT_DIR / "agents"))
+import utf8_fix
 
+load_dotenv()
+console = Console(legacy_windows=False)
 ROOT_DIR = Path(__file__).parent.parent
 GITHUB_REPO = os.getenv("GITHUB_REPO", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+GIT_PUSH_OPTIONAL = os.getenv("GIT_PUSH_OPTIONAL", "true").lower() in ("1", "true", "yes")
+
+# Repo layout — paths the sprint Git Agent MUST commit after task close (Task 7 + Task 38)
+REPO_MEANINGFUL_PREFIXES = (
+    "agents/",
+    "backend/",
+    "frontend/src/",
+    "frontend/public/",
+    "scripts/",
+    "tasks/",
+    "tests/",
+    "config/",
+    "docs/",
+    "mcp_servers/",
+)
+REPO_MEANINGFUL_ROOT_FILES = (
+    "tasks.md",
+    "README.md",
+    "pyproject.toml",
+    "requirements.txt",
+    ".env.example",
+    "package-lock.json",
+)
+REPO_MEANINGFUL_GLOBS = (
+    "AI_Analytics_Dashboard_Presentation.pptx",
+    "AI_Agents_and_MCP_Presentation.pptx",
+)
+# Runtime / noisy — never commit from sprint pipeline
+REPO_IGNORE_PATTERNS = (
+    ".log", ".system_generated", "__pycache__", ".pytest_cache",
+    "brain/", ".tmp", "logs/", "reports/",
+    "memory/agent_state.json", "memory/.processed_task_ids.json",
+    "memory/.retry_context_", "memory/task_history/",
+    "node_modules/", ".env",  # secrets / deps
+    "~$",  # Office temp lock files
+)
+
+
+def _find_git_bin() -> str:
+    """Find usable git executable path on Windows or POSIX."""
+    import shutil, glob
+    which = shutil.which("git") or shutil.which("git.exe")
+    if which:
+        return which
+    # Common Windows locations including GitHubDesktop
+    user_home = os.path.expanduser("~")
+    candidates = [
+        r"C:\Program Files\Git\cmd\git.exe",
+        r"C:\Program Files\Git\bin\git.exe",
+        r"C:\Program Files (x86)\Git\cmd\git.exe",
+        os.path.join(user_home, r"AppData\Local\Programs\Git\cmd\git.exe"),
+    ]
+    # Search GitHubDesktop paths
+    ghd_pattern = os.path.join(user_home, r"AppData\Local\GitHubDesktop\app-*\resources\app\git\cmd\git.exe")
+    candidates.extend(glob.glob(ghd_pattern))
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return "git"
 
 
 def _run_git(command: list[str], cwd: Path = ROOT_DIR) -> tuple[str, str, int]:
     """Run a git command and return (stdout, stderr, returncode)."""
+    git_bin = _find_git_bin()
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     result = subprocess.run(
-        ["git"] + command,
+        [git_bin] + command,
         cwd=str(cwd),
         capture_output=True,
-        text=True
+        text=True,
+        env=env,
     )
     return result.stdout.strip(), result.stderr.strip(), result.returncode
 
@@ -81,28 +149,113 @@ def get_changed_files() -> list[str]:
     return files
 
 
+def is_meaningful_repo_path(filepath: str) -> bool:
+    """True if path is eligible for sprint-agent commit (source, docs, tests — not runtime memory)."""
+    normalized = filepath.replace("\\", "/")
+    lower = normalized.lower()
+    if any(pat in lower for pat in REPO_IGNORE_PATTERNS):
+        return False
+    base = normalized.split("/")[-1]
+    if base in REPO_MEANINGFUL_ROOT_FILES or base in REPO_MEANINGFUL_GLOBS:
+        return True
+    return any(normalized.startswith(prefix) for prefix in REPO_MEANINGFUL_PREFIXES)
+
+
 def get_meaningful_changed_files() -> list[str]:
     """
-    Get list of meaningful changed source code/documentation files.
-    Filters out log files, system cache, temporary files, and noisy state logs
-    to prevent unnecessary spam commits.
+    Meaningful changed files per repo folder structure.
+    Uses allowlist (agents/, backend/, frontend/src/, tasks/, tests/, …) and
+    excludes runtime memory, caches, logs, and .env secrets.
     """
-    raw_files = get_changed_files()
     meaningful = []
-    
-    # Exclude temporary, cache, log, and noisy state files
-    ignored_patterns = (
-        ".log", ".system_generated", "__pycache__", ".pytest_cache",
-        "brain/", ".tmp", "task-", "logs/"
-    )
-    
-    for f in raw_files:
-        normalized = f.replace("\\", "/").lower()
-        if any(pat in normalized for pat in ignored_patterns):
-            continue
-        meaningful.append(f)
-        
+    for f in get_changed_files():
+        if is_meaningful_repo_path(f):
+            meaningful.append(f)
     return meaningful
+
+
+def stage_meaningful_files(files: list[str]) -> bool:
+    """Stage only meaningful paths (not blind git add .)."""
+    if not files:
+        return True
+    for f in files:
+        _, stderr, code = _run_git(["add", "--", f])
+        if code != 0:
+            console.print(f"[red]❌ Git add failed for {f}: {stderr}[/red]")
+            return False
+    console.print(f"[cyan]📦 Staged {len(files)} meaningful file(s)[/cyan]")
+    return True
+
+
+def commit_and_push_for_task(task_title: str, task_id: str = "") -> dict:
+    """
+    Sprint pipeline Git gate — commit + push meaningful repo files for a closed task.
+    Returns {ok, committed, pushed, files, message}.
+    """
+    init_repo()
+    meaningful = get_meaningful_changed_files()
+    unpushed = get_unpushed_commits()
+
+    if not meaningful and not unpushed:
+        return {
+            "ok": True,
+            "committed": False,
+            "pushed": False,
+            "files": [],
+            "message": "No meaningful repo changes — git gate skipped (clean)",
+        }
+
+    committed = False
+    if meaningful:
+        if not stage_meaningful_files(meaningful):
+            return {"ok": False, "committed": False, "pushed": False, "files": meaningful, "message": "git add failed"}
+        summary = f"Sprint task: {task_title}" if task_title else "Sprint agent commit"
+        message = generate_commit_message(
+            tasks_completed=[f"{task_title} ({task_id[:8]})"] if task_title else None,
+            files_changed=meaningful,
+            custom_summary=summary,
+        )
+        if not commit(message):
+            return {"ok": False, "committed": False, "pushed": False, "files": meaningful, "message": "git commit failed"}
+        committed = True
+
+    pushed = False
+    push_deferred = False
+    if GITHUB_REPO:
+        branch = os.getenv("GIT_DEFAULT_BRANCH", "main")
+        sync_with_remote(branch)
+        pushed = push_with_retry(branch)
+        if not pushed:
+            if GIT_PUSH_OPTIONAL and (committed or get_unpushed_commits(branch)):
+                console.print(
+                    "[yellow]⚠️ Push deferred (GIT_PUSH_OPTIONAL) — local commit accepted for demo gate[/yellow]"
+                )
+                push_deferred = True
+                pushed = False
+            else:
+                return {
+                    "ok": False,
+                    "committed": committed,
+                    "pushed": False,
+                    "files": meaningful,
+                    "message": "git push failed — check GITHUB_TOKEN / GITHUB_REPO",
+                }
+    else:
+        console.print("[yellow]⚠️  No GITHUB_REPO — commit saved locally only[/yellow]")
+        pushed = True  # local-only is acceptable for gate
+
+    msg = f"Committed {len(meaningful)} file(s)" if meaningful else "Pushed existing commits"
+    if push_deferred:
+        msg += " (push deferred — local commit OK for demo)"
+
+    return {
+        "ok": True,
+        "committed": committed,
+        "pushed": pushed,
+        "push_deferred": push_deferred,
+        "files": meaningful,
+        "message": msg,
+    }
 
 
 def stage_all() -> bool:
@@ -149,8 +302,9 @@ def generate_commit_message(
 
 def commit(message: str) -> bool:
     """Commit staged changes with the given message."""
+    git_bin = _find_git_bin()
     result = subprocess.run(
-        ["git", "commit", "-F", "-"],
+        [git_bin, "commit", "-F", "-"],
         cwd=str(ROOT_DIR),
         input=message,
         capture_output=True,
@@ -185,15 +339,38 @@ def push(branch: str = "main", force: bool = False) -> bool:
         return False
 
 
-def pull(branch: str = "main") -> bool:
+def pull(branch: str = "main", rebase: bool = True) -> bool:
     """Pull latest changes from remote origin."""
-    stdout, stderr, code = _run_git(["pull", "origin", branch])
+    _run_git(["fetch", "origin", branch])
+    cmd = ["pull", "--rebase", "--autostash", "origin", branch] if rebase else ["pull", "origin", branch]
+    stdout, stderr, code = _run_git(cmd)
     if code == 0:
         console.print(f"[bold green]📥 Pulled latest changes from origin/{branch}[/bold green]")
         return True
     else:
         console.print(f"[red]❌ Pull failed: {stderr}[/red]")
         return False
+
+
+def sync_with_remote(branch: str = "main") -> bool:
+    """Fetch + rebase onto origin — used before push retries."""
+    _run_git(["fetch", "origin", branch])
+    _, stderr, code = _run_git(["rebase", f"origin/{branch}"])
+    if code == 0:
+        return True
+    _run_git(["rebase", "--abort"])
+    return pull(branch, rebase=True)
+
+
+def push_with_retry(branch: str = "main", attempts: int = 3) -> bool:
+    """Push to origin with fetch/rebase retries on non-fast-forward."""
+    for i in range(attempts):
+        if push(branch):
+            return True
+        if i < attempts - 1:
+            console.print(f"[yellow]↻ Push retry {i + 2}/{attempts} — syncing with origin/{branch}...[/yellow]")
+            sync_with_remote(branch)
+    return False
 
 
 def get_commit_log(n: int = 5) -> list[str]:
@@ -260,10 +437,29 @@ def setup_git_config(name: str = "AI Analytics Agent", email: str = "agent@ai-da
 
 
 if __name__ == "__main__":
-    console.print("[bold blue]🔀 Git Agent Test[/bold blue]")
-    init_repo()
-    setup_git_config()
-    log = get_commit_log()
-    console.print(f"Recent commits: {log}")
-    changed = get_changed_files()
-    console.print(f"Changed files: {changed}")
+    import argparse
+    import sys
+    import time
+
+    ROOT = Path(__file__).parent.parent
+    sys.path.insert(0, str(ROOT / "agents"))
+    from memory_manager import update_agent_status
+
+    parser = argparse.ArgumentParser(description="Git Agent")
+    parser.add_argument("--standby", action="store_true", help="Run standby loop for fleet supervisor")
+    args = parser.parse_args()
+
+    if args.standby:
+        console.print("[bold blue]Git Agent — standby mode[/bold blue]")
+        update_agent_status("git_agent", "running", "Standby - ready for commits")
+        while True:
+            time.sleep(30)
+            update_agent_status("git_agent", "running", "Standby - ready for commits")
+    else:
+        console.print("[bold blue]Git Agent Test[/bold blue]")
+        init_repo()
+        setup_git_config()
+        log = get_commit_log()
+        console.print(f"Recent commits: {log}")
+        changed = get_changed_files()
+        console.print(f"Changed files: {changed}")

@@ -3,6 +3,11 @@ import axios from 'axios';
 
 const API = import.meta.env.VITE_API_URL || '';
 
+const buildStatsUrl = ({ globalTargetDb, oerdte, filterWhs, filterBatchId, filterInvoice, filterOnlyScratches, limit, offset }) => {
+  const scratchParam = filterOnlyScratches ? '&only_scratches=true' : '';
+  return `${API}/api/warehouse/statistics?target_db=${globalTargetDb}&oerdte=${oerdte}&batch_id=${encodeURIComponent(filterBatchId || '')}&oewhse=${encodeURIComponent(filterWhs || '')}&oeinv=${encodeURIComponent(filterInvoice || '')}${scratchParam}&limit=${limit}&offset=${offset}`;
+};
+
 export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = 'pg_dev', externalFilters, copilotFilterActive }) {
   const [summary, setSummary] = useState(null);
   const [items, setItems] = useState([]);
@@ -10,16 +15,13 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  // Strict date behavior: tracks when selected date has genuinely no data
   const [noDataForDate, setNoDataForDate] = useState(false);
 
-  // Table Level Filter Parameters
   const [filterWhs, setFilterWhs] = useState('');
   const [filterBatchId, setFilterBatchId] = useState('');
   const [filterInvoice, setFilterInvoice] = useState('');
   const [filterOnlyScratches, setFilterOnlyScratches] = useState(false);
 
-  // Handle external filter requests from Copilot or Anomaly panel
   useEffect(() => {
     if (externalFilters) {
       const rawW = externalFilters.whse || externalFilters.oewhse || externalFilters.whs_num || '';
@@ -27,101 +29,100 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
       setFilterBatchId(externalFilters.batch !== undefined ? externalFilters.batch : '');
       setFilterInvoice(externalFilters.invoice !== undefined ? externalFilters.invoice : '');
       setFilterOnlyScratches(Boolean(externalFilters.onlyScratches));
-    } else {
+    } else if (!copilotFilterActive) {
       setFilterWhs('');
       setFilterBatchId('');
       setFilterInvoice('');
       setFilterOnlyScratches(false);
     }
-  }, [externalFilters]);
+  }, [externalFilters, copilotFilterActive]);
 
-  const LIMIT = 20;
-  // ✅ TASK 19 & Copilot Mandate: When Copilot mode is active, date filter is DISABLED (oerdte="")
-  // so the table queries the full dataset across all dates for the prompted parameters.
-  const isCopilotMode = copilotFilterActive || Boolean(externalFilters?.whse || externalFilters?.batch || externalFilters?.invoice || externalFilters?.onlyScratches);
-  const oerdte = isCopilotMode ? '' : (globalDate ? globalDate.replace(/-/g, '') : '');
+  const PAGE_SIZE = 20;
+  const oerdte = copilotFilterActive ? '' : (globalDate ? globalDate.replace(/-/g, '') : '');
 
-  // Reset & initial load on DB target, date change, or filter inputs
-  useEffect(() => {
-    let isSubscribed = true;
-    const fetchInitial = async () => {
-      setLoading(true);
-      setNoDataForDate(false);
-      try {
-        const scratchParam = filterOnlyScratches ? '&only_scratches=true' : '';
-        const res = await axios.get(`${API}/api/warehouse/statistics?target_db=${globalTargetDb}&oerdte=${oerdte}&batch_id=${filterBatchId}&oewhse=${filterWhs}&oeinv=${filterInvoice}${scratchParam}&limit=${LIMIT}&offset=0`);
-        if (!isSubscribed) return;
+  const [currentPage, setCurrentPage] = useState(1);
 
-        let fetchedItems = res.data?.warehouse_items || [];
-        const totalFromServer = res.data.total_count ?? fetchedItems.length;
+  const queryParams = {
+    globalTargetDb,
+    oerdte,
+    filterWhs,
+    filterBatchId,
+    filterInvoice,
+    filterOnlyScratches,
+  };
 
-        // ✅ STRICT DATE BEHAVIOR: If a specific date was chosen and zero records
-        // were returned, flag it so we show a clear empty state — no silent fallback.
-        if (oerdte && totalFromServer === 0) {
-          setNoDataForDate(true);
-          setItems([]);
-          setTotalCount(0);
-          setSummary(null);
-          setHasMore(false);
-          return;
-        }
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const canGoPrevious = currentPage > 1;
+  const canGoNext = currentPage < totalPages;
+  const rangeStart = totalCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const rangeEnd = totalCount === 0 ? 0 : rangeStart + items.length - 1;
 
-        if (filterWhs) {
-          const targetClean = String(filterWhs).trim().replace(/^0+/, '');
-          fetchedItems = fetchedItems.filter(it => String(it.whs_num).trim().replace(/^0+/, '') === targetClean);
-        }
-        if (filterBatchId) {
-          fetchedItems = fetchedItems.filter(it => String(it.batch_id).trim().includes(String(filterBatchId).trim()));
-        }
-        if (filterInvoice) {
-          fetchedItems = fetchedItems.filter(it => String(it.invc_num_stg).trim().includes(String(filterInvoice).trim()));
-        }
-        if (filterOnlyScratches) {
-          fetchedItems = fetchedItems.filter(it => (it.whs_scrtch_qty_stg || 0) > 0);
-        }
+  const fetchPage = async (page, { showLoading = true } = {}) => {
+    const safePage = Math.max(1, page);
+    const offset = (safePage - 1) * PAGE_SIZE;
+    if (showLoading) setLoading(true);
+    setNoDataForDate(false);
+    try {
+      const res = await axios.get(buildStatsUrl({ ...queryParams, limit: PAGE_SIZE, offset }));
+      const fetchedItems = res.data?.warehouse_items || [];
+      const totalFromServer = res.data.total_count ?? fetchedItems.length;
 
-        setSummary(res.data.summary || null);
-        setItems(fetchedItems);
-        setTotalCount(totalFromServer);
-        setHasMore(res.data.has_more ?? false);
-      } catch (err) {
-        if (!isSubscribed) return;
-        console.error('[WarehouseSalesAnalytics] API query error:', err);
+      if (oerdte && totalFromServer === 0) {
+        setNoDataForDate(true);
         setItems([]);
         setTotalCount(0);
         setSummary(null);
-      } finally {
-        if (isSubscribed) setLoading(false);
+        setHasMore(false);
+        setCurrentPage(1);
+        return;
       }
-    };
-    fetchInitial();
-    return () => { isSubscribed = false; };
-  }, [globalTargetDb, oerdte, filterWhs, filterBatchId, filterInvoice, filterOnlyScratches]);
 
-  // Load next batch on scroll down
-  const loadMoreData = async () => {
-    if (loadingMore || !hasMore) return;
-    setLoadingMore(true);
-    const nextOffset = items.length;
-    try {
-      const res = await axios.get(`${API}/api/warehouse/statistics?target_db=${globalTargetDb}&oerdte=${oerdte}&batch_id=${filterBatchId}&oewhse=${filterWhs}&oeinv=${filterInvoice}&limit=${LIMIT}&offset=${nextOffset}`);
-      setItems((prev) => [...prev, ...(res.data.warehouse_items || [])]);
-      setHasMore(res.data.has_more ?? false);
+      setSummary(res.data.summary || null);
+      setItems(fetchedItems);
+      setTotalCount(totalFromServer);
+      const pages = Math.max(1, Math.ceil(totalFromServer / PAGE_SIZE));
+      const resolvedPage = Math.min(safePage, pages);
+      setCurrentPage(resolvedPage);
+      setHasMore(res.data.has_more ?? (offset + fetchedItems.length < totalFromServer));
     } catch (err) {
-      console.error('Failed to fetch next batch of warehouse data:', err);
+      console.error('[WarehouseSalesAnalytics] API query error:', err);
+      setItems([]);
+      setTotalCount(0);
+      setSummary(null);
+      setHasMore(false);
     } finally {
+      if (showLoading) setLoading(false);
       setLoadingMore(false);
     }
   };
 
+  useEffect(() => {
+    setCurrentPage(1);
+    fetchPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globalTargetDb, oerdte, filterWhs, filterBatchId, filterInvoice, filterOnlyScratches]);
+
+  const goToPreviousPage = () => {
+    if (!canGoPrevious || loading || loadingMore) return;
+    setLoadingMore(true);
+    fetchPage(currentPage - 1, { showLoading: false });
+  };
+
+  const goToNextPage = () => {
+    if (!canGoNext || loading || loadingMore) return;
+    setLoadingMore(true);
+    fetchPage(currentPage + 1, { showLoading: false });
+  };
+
+  const loadMoreData = goToNextPage;
+
   const handleScroll = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.target;
-    if (scrollHeight - scrollTop - clientHeight < 50) {
-      loadMoreData();
+    if (scrollHeight - scrollTop - clientHeight < 50 && canGoNext && !loadingMore) {
+      goToNextPage();
     }
   };
 
-  // Format oerdte for display: 20260728 → 2026-07-28
   const displayDate = oerdte && oerdte.length === 8
     ? `${oerdte.slice(0,4)}-${oerdte.slice(4,6)}-${oerdte.slice(6,8)}`
     : oerdte || 'selected date';
@@ -135,10 +136,14 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
           </h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '4px' }}>
             Identifies sales information for warehouse item level and invoice level transfer to Procurement systems.
+            {oerdte && (
+              <span style={{ marginLeft: '8px', color: '#a78bfa', fontWeight: 600 }}>
+                Order Date: {displayDate}
+              </span>
+            )}
           </p>
         </div>
 
-        {/* Dynamic Parameter Filter Bar: Warehouse (oewhse), Batch ID (batch_id), Invoice (oeinv) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Warehouse (oewhse):</span>
@@ -157,8 +162,11 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
             >
               <option value="">All Warehouses</option>
               {(() => {
-                const whsList = summary?.distinct_warehouses || [];
-                const optionsSet = new Set(whsList.map(w => String(w).trim()));
+                const fromTotals = (summary?.warehouse_totals || [])
+                  .map(w => String(w.whs_num ?? w.warehouse ?? '').trim())
+                  .filter(Boolean);
+                const fromItems = items.map(it => String(it.whs_num ?? '').trim()).filter(Boolean);
+                const optionsSet = new Set([...fromTotals, ...fromItems]);
                 if (filterWhs) optionsSet.add(String(filterWhs).trim());
                 const sortedWhs = Array.from(optionsSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
                 return sortedWhs.map(w => (
@@ -170,13 +178,11 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Batch ID (batch_id):</span>
-            <input
-              type="text"
-              placeholder="e.g. 1851"
+            <select
               value={filterBatchId}
               onChange={(e) => setFilterBatchId(e.target.value)}
               style={{
-                width: '90px',
+                minWidth: '130px',
                 background: 'var(--bg-secondary)',
                 color: 'var(--text-primary)',
                 border: '1px solid var(--border-color)',
@@ -185,7 +191,18 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
                 fontSize: '12px',
                 fontWeight: 600
               }}
-            />
+            >
+              <option value="">All Batches</option>
+              {(() => {
+                const fromSummary = (summary?.batch_ids || []).map(b => String(b).trim()).filter(Boolean);
+                const fromItems = items.map(it => String(it.batch_id || '').trim()).filter(Boolean);
+                const batchSet = new Set([...fromSummary, ...fromItems]);
+                if (filterBatchId) batchSet.add(String(filterBatchId).trim());
+                return Array.from(batchSet).sort().map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ));
+              })()}
+            </select>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -243,37 +260,35 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
         </div>
       </div>
 
-      {/* Summary KPI Cards */}
       {summary && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '20px' }}>
           <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
             <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>Total Cases Built (cases_bld_stg)</div>
             <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-primary)', marginTop: '4px' }}>
-              {summary.total_cases_built.toLocaleString()}
+              {(summary.total_cases_built ?? 0).toLocaleString()}
             </div>
           </div>
           <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
             <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>Original Order Qty (orgnl_ordr_qty)</div>
             <div style={{ fontSize: '24px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>
-              {summary.total_original_order_qty.toLocaleString()}
+              {(summary.total_original_order_qty ?? 0).toLocaleString()}
             </div>
           </div>
           <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-            <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>Invoices Processed</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>Line Items / Invoices</div>
             <div style={{ fontSize: '24px', fontWeight: 700, color: '#c084fc', marginTop: '4px' }}>
-              {summary.total_invoices_processed}
+              {(summary.total_line_items ?? totalCount ?? 0).toLocaleString()} / {summary.total_invoices_processed ?? 0}
             </div>
           </div>
           <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
             <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>Procurement Transfer Rate</div>
             <div style={{ fontSize: '24px', fontWeight: 700, color: '#f59e0b', marginTop: '4px' }}>
-              {summary.procurement_fulfillment_rate}
+              {summary.procurement_fulfillment_rate ?? '0%'}
             </div>
           </div>
         </div>
       )}
 
-      {/* No-data empty state — shown when selected date has zero records */}
       {noDataForDate && !loading && (
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -288,24 +303,19 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
           <div style={{ fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '440px' }}>
             The selected order date <strong style={{ color: '#a78bfa' }}>{displayDate}</strong> has no records
             in <strong style={{ color: '#34d399' }}>{globalTargetDb.toUpperCase()}</strong>.
-            Please select a different date that has data, or clear the date filter to view all available records.
-          </div>
-          <div style={{ marginTop: '16px', fontSize: '12px', color: '#6b7280' }}>
-            💡 Tip: The AI Data Copilot above always queries the full dataset regardless of date.
+            Please select a different date that has data.
           </div>
         </div>
       )}
 
-      {/* Row Count Badge & Query Status — only when we have data */}
       {!noDataForDate && (
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
         <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-          Data Table Rows: <span style={{ color: 'var(--color-primary-light)', fontWeight: 700 }}>{items.length}</span> / {totalCount} Loaded
+          Data Table Rows: <span style={{ color: 'var(--color-primary-light)', fontWeight: 700 }}>{rangeStart}–{rangeEnd}</span> / {totalCount} Loaded
         </div>
       </div>
       )}
 
-      {/* Warehouse Items Table with Vertical Scroll Bar & Automatic Infinite Load */}
       <div
         onScroll={handleScroll}
         style={{
@@ -343,16 +353,16 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
               <tr>
                 <td colSpan={11} style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-secondary)' }}>
                   <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '14px' }}>
-                    No Database Records Found for Selected Date ({globalDate || 'No Date'})
+                    No Database Records Found for Selected Filters
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                    PostgreSQL {globalTargetDb.toUpperCase()} has 0 records matching the selected date & filter parameters. Please change the date picker above.
+                    PostgreSQL {globalTargetDb.toUpperCase()} has 0 records matching date {globalDate || 'any'} and filter parameters.
                   </div>
                 </td>
               </tr>
             ) : (
-              items.map((item, idx) => (
-                <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              items.map((item) => (
+                <tr key={`${item.whs_num}-${item.batch_id}-${item.invc_num_stg}-${item.cust_item_code}-${item.oerdte}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                   <td style={{ padding: '10px', fontWeight: 700, color: 'var(--color-cyan)' }}>{item.whs_num}</td>
                   <td style={{ padding: '10px', color: '#60a5fa', fontWeight: 600, fontFamily: 'monospace' }}>{item.oerdte || '—'}</td>
                   <td style={{ padding: '10px', color: '#f59e0b', fontWeight: 600, fontFamily: 'monospace' }}>{item.batch_id || '—'}</td>
@@ -385,7 +395,6 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
         )}
       </div>
 
-      {/* Pagination Controls Bar */}
       {!noDataForDate && items.length > 0 && (
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -393,21 +402,21 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
           flexWrap: 'wrap', gap: '10px'
         }}>
           <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-            Showing <strong style={{ color: 'var(--text-primary)' }}>{items.length}</strong> of <strong style={{ color: 'var(--color-primary-light)' }}>{totalCount}</strong> total items
+            Showing <strong style={{ color: 'var(--text-primary)' }}>{rangeStart}–{rangeEnd}</strong> of <strong style={{ color: 'var(--color-primary-light)' }}>{totalCount}</strong> total items
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button
-              onClick={() => {
-                if (items.length > 20) setItems(items.slice(0, Math.max(20, items.length - 20)));
-              }}
-              disabled={items.length <= 20}
+              type="button"
+              id="warehouse-table-prev-page"
+              onClick={goToPreviousPage}
+              disabled={!canGoPrevious || loading || loadingMore}
               style={{
-                background: items.length <= 20 ? 'rgba(255,255,255,0.05)' : 'var(--bg-secondary)',
-                color: items.length <= 20 ? 'var(--text-muted)' : 'var(--text-primary)',
+                background: !canGoPrevious ? 'rgba(255,255,255,0.05)' : 'var(--bg-secondary)',
+                color: !canGoPrevious ? 'var(--text-muted)' : 'var(--text-primary)',
                 border: '1px solid var(--border-color)',
                 padding: '4px 12px', borderRadius: '6px', fontSize: '12px',
-                cursor: items.length <= 20 ? 'not-allowed' : 'pointer',
+                cursor: !canGoPrevious ? 'not-allowed' : 'pointer',
                 fontWeight: 600
               }}
             >
@@ -415,18 +424,20 @@ export default function WarehouseSalesAnalytics({ globalDate, globalTargetDb = '
             </button>
 
             <span style={{ fontSize: '12px', fontWeight: 700, color: '#a78bfa', background: 'rgba(124,58,237,0.15)', padding: '4px 10px', borderRadius: '6px' }}>
-              Page 1 of {Math.max(1, Math.ceil(totalCount / 20))}
+              Page {currentPage} of {totalPages}
             </span>
 
             <button
-              onClick={loadMoreData}
-              disabled={!hasMore || loadingMore}
+              type="button"
+              id="warehouse-table-next-page"
+              onClick={goToNextPage}
+              disabled={!canGoNext || loading || loadingMore}
               style={{
-                background: !hasMore ? 'rgba(255,255,255,0.05)' : 'var(--color-primary)',
-                color: '#ffffff',
+                background: !canGoNext ? 'rgba(255,255,255,0.05)' : 'var(--color-primary)',
+                color: !canGoNext ? 'var(--text-muted)' : '#ffffff',
                 border: 'none',
                 padding: '4px 12px', borderRadius: '6px', fontSize: '12px',
-                cursor: !hasMore ? 'not-allowed' : 'pointer',
+                cursor: !canGoNext ? 'not-allowed' : 'pointer',
                 fontWeight: 600
               }}
             >

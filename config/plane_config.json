@@ -1,7 +1,27 @@
 {
+  "dynamic_workspace_selection": true,
   "workspace_slug": "agentbuilder",
+  "workspace_slugs": [
+    "agentbuilder"
+  ],
+  "auto_discover_workspaces": true,
   "project_name": "AI Analytics Dashboard",
-  "project_id": "6ceb45ad-db0b-42eb-8de1-b4fd05d6593a",
+  "project_id": "all",
+  "project_scope": "all",
+  "monitored_projects": [
+    {
+      "identifier": "AGENT",
+      "name": "agentbuilder"
+    },
+    {
+      "identifier": "AAD",
+      "name": "AI Analytics Dashboard"
+    },
+    {
+      "identifier": "AGENTICOPS",
+      "name": "AgenticOps AI - Enterprise Control Plane"
+    }
+  ],
   "api_base_url": "https://api.plane.so/api/v1",
   "sprints": [
     {

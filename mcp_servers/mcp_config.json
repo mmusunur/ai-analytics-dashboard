@@ -1,46 +1,80 @@
 {
+  "version": "1.0",
+  "description": "Master MCP server registry for AgenticOps AI — tools route through agents/mcp_client.py",
   "mcpServers": {
     "plane": {
+      "id": "plane",
+      "name": "Plane MCP",
+      "description": "Project management — tasks, sprints, comments, status updates via Plane REST API",
       "command": "python",
-      "args": [
-        "-m",
-        "agents.plane_agent"
-      ],
+      "args": ["-m", "agents.plane_agent"],
+      "backedBy": "agents/plane_agent.py",
+      "usedBy": ["Sprint Watcher", "Orchestrator", "Plane Agent"],
       "env": {
         "PLANE_API_TOKEN": "${PLANE_API_TOKEN}",
         "PLANE_WORKSPACE_SLUG": "${PLANE_WORKSPACE_SLUG}"
-      }
+      },
+      "tools": [
+        { "name": "list_tasks", "description": "List issues for a project" },
+        { "name": "update_task_status", "description": "Move task to unstarted / started / completed" },
+        { "name": "add_comment", "description": "Post agent result comment on issue" },
+        { "name": "list_projects", "description": "List workspace projects" },
+        { "name": "get_single_task", "description": "Fetch live task state from Plane" }
+      ]
     },
     "github": {
+      "id": "github",
+      "name": "GitHub MCP",
+      "description": "Git automation — stage, commit, push after sprint task completion",
       "command": "python",
-      "args": [
-        "-m",
-        "agents.git_agent"
-      ],
+      "args": ["-m", "agents.git_agent"],
+      "backedBy": "agents/git_agent.py",
+      "usedBy": ["Git Agent", "Sprint Watcher"],
       "env": {
         "GITHUB_TOKEN": "${GITHUB_TOKEN}",
         "GITHUB_REPO": "${GITHUB_REPO}"
-      }
+      },
+      "tools": [
+        { "name": "git_commit", "description": "Stage and commit meaningful changes" },
+        { "name": "git_push", "description": "Push branch to remote" },
+        { "name": "get_commit_log", "description": "Return recent commit messages" },
+        { "name": "get_meaningful_changed_files", "description": "List files eligible for agent commit" }
+      ]
     },
     "memory": {
+      "id": "memory",
+      "name": "Memory MCP",
+      "description": "Persistent agent state, pipeline telemetry, task queue, and audit logs",
       "command": "python",
-      "args": [
-        "-m",
-        "agents.memory_manager"
-      ],
-      "env": {}
+      "args": ["-m", "agents.memory_manager"],
+      "backedBy": "agents/memory_manager.py",
+      "usedBy": ["All Agents", "Agent Monitor UI", "Sprint Board UI"],
+      "env": {},
+      "tools": [
+        { "name": "load_state", "description": "Read memory/agent_state.json" },
+        { "name": "update_agent_status", "description": "Update per-agent status telemetry" },
+        { "name": "set_pipeline_status", "description": "Track sprint pipeline phase + progress" },
+        { "name": "log_task_result", "description": "Append to daily task history JSONL" },
+        { "name": "get_task_queue", "description": "Return multi-task sprint queue state" }
+      ]
     },
     "browser": {
+      "id": "browser",
+      "name": "Browser MCP",
+      "description": "Playwright E2E gateway — unit + browser + dynamic sprint tests via Tester Agent",
       "command": "python",
-      "args": [
-        "-m",
-        "pytest",
-        "tests/browser/"
-      ],
+      "args": ["-m", "agents.tester_agent"],
+      "backedBy": "agents/tester_agent.py + tests/browser/",
+      "usedBy": ["Tester Agent", "Sprint Watcher"],
       "env": {
         "FRONTEND_URL": "${FRONTEND_URL}",
         "BACKEND_URL": "${BACKEND_URL}"
-      }
+      },
+      "tools": [
+        { "name": "run_unit_tests", "description": "Execute pytest unit suite" },
+        { "name": "run_browser_tests", "description": "Execute Playwright browser suite" },
+        { "name": "run_sprint_task_tests", "description": "Dynamic tests from active Plane task" }
+      ]
     }
   }
 }

@@ -36,9 +36,9 @@ def main():
     parser.add_argument(
         "--interval",
         type=int,
-        default=60,
+        default=30,
         metavar="SECONDS",
-        help="How often to poll Plane for new tasks (default: 60s)",
+        help="How often to poll Plane for new tasks (default: 30s; uses 15s when tasks active)",
     )
     parser.add_argument(
         "--cycles",

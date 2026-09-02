@@ -115,10 +115,9 @@ def test_header_controls_interactive(page: Page):
     date_input.fill(dynamic_date_iso)
 
     # 2. Change Target DB dropdown to PostgreSQL DEV
-    db_select = page.locator("select")
-    if db_select.count() > 0:
-        expect(db_select.first).to_be_visible()
-        db_select.first.select_option("pg_dev")
+    db_select = page.locator("#global-db-selector")
+    expect(db_select).to_be_visible()
+    db_select.select_option("pg_dev")
 
     # 3. Click Submit button
     submit_btn = page.locator("button:has-text('Submit'), #submit-db-btn")

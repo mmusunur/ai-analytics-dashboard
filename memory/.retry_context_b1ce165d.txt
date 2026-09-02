@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "C:\Users\manik\Downloads\c&s\mani_personal\ai_analytics_dashboard\agents\builder_agent.py", line 24, in <module>
+    from builder_rules import apply_rule_based_fixes, _load_task_spec_context
+  File "C:\Users\manik\Downloads\c&s\mani_personal\ai_analytics_dashboard\agents\builder_rules.py", line 149
+    console.print(f"[dim]Loaded task spec context ({len(spec)} chars) from tasks/[/dim]")
+IndentationError: unexpected indent

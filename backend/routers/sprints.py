@@ -1,16 +1,17 @@
 """
 FastAPI Router — Sprint & Agent Task Management
-Provides endpoints to fetch live Plane sprint tasks, active agent execution steps, and sprint cycle metadata.
-Includes automatic non-blocking background task worker triggering for Plane task pickup.
+Provides endpoints to fetch live Plane sprint tasks across multiple projects in a workspace.
+Includes automatic non-blocking background task worker triggering for Plane task pickup (< 300 lines).
 """
 
 import os
 import sys
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Body
 from fastapi.responses import JSONResponse
 
 ROOT_DIR = Path(__file__).parent.parent.parent
@@ -21,25 +22,60 @@ router = APIRouter()
 _watcher_lock = threading.Lock()
 _last_trigger_time = 0.0
 
+# Short-lived response cache — UI polls /tasks every ~12s; avoid hammering Plane (HTTP 429).
+_sprint_tasks_cache = {"key": "", "payload": None, "ts": 0.0}
+_sprint_tasks_cache_ttl = 12.0
+_workspaces_cache = {"payload": None, "ts": 0.0}
+_workspaces_cache_ttl = 3600.0  # 1 hour cache
 
-def trigger_watcher_in_background():
+
+
+def _sprint_cache_key(ws: str, pid: str) -> str:
+    return f"{ws}:{pid or 'all'}"
+
+
+def _get_sprint_tasks_cache(key: str):
+    if _sprint_tasks_cache["key"] != key:
+        return None
+    if time.time() - _sprint_tasks_cache["ts"] >= _sprint_tasks_cache_ttl:
+        return None
+    return _sprint_tasks_cache["payload"]
+
+
+def _set_sprint_tasks_cache(key: str, payload: dict):
+    _sprint_tasks_cache["key"] = key
+    _sprint_tasks_cache["payload"] = payload
+    _sprint_tasks_cache["ts"] = time.time()
+
+
+def trigger_watcher_in_background(workspace_slug: Optional[str] = None, project_id: Optional[str] = None):
     """
     Spawns a non-blocking background thread to run SprintWatcherAgent
-    whenever there are actionable tasks in Plane.
+    whenever there are actionable (unstarted/todo/backlog) tasks in Plane.
+    Cooldown: 20s minimum between triggers (was 60s — reduced to improve pickup responsiveness).
     """
     global _last_trigger_time
     now = time.time()
-    if now - _last_trigger_time < 8.0:  # Debounce triggers within 8s
+    elapsed = now - _last_trigger_time
+    if elapsed < 20.0:
+        print(f"[Sprint Router]: Watcher trigger throttled ({elapsed:.1f}s < 20s cooldown). Skipping.")
         return
     _last_trigger_time = now
 
     def _worker():
         if not _watcher_lock.acquire(blocking=False):
-            return  # Already running in background
+            print("[Sprint Router]: Watcher already running — skipping duplicate trigger.")
+            return
         try:
-            print("[Sprint Router]: ⚡ Background task picker triggered for active Plane sprint tasks...")
+            print(f"[Sprint Router]: Task picker triggered for workspace='{workspace_slug}' project='{project_id}'...")
             from sprint_watcher_agent import SprintWatcherAgent
             watcher = SprintWatcherAgent(poll_interval_seconds=5)
+            # If a real project_id was passed (not 'all'), inject it into the watcher's state
+            # so _resolve_project_id() has a concrete UUID to work with.
+            if project_id and project_id != "all" and len(str(project_id)) > 10:
+                watcher.project_id = project_id
+                watcher.state["plane_project_id"] = project_id
+                print(f"[Sprint Router]: Watcher project_id set to real UUID: {project_id[:8]}...")
             watcher.watch(max_cycles=1)
         except Exception as e:
             print(f"[Sprint Router Watcher Error]: {e}")
@@ -50,28 +86,254 @@ def trigger_watcher_in_background():
     t.start()
 
 
-@router.get("/tasks")
-def get_sprint_tasks():
-    """Fetch live sprint tasks from Plane API or agent state memory and trigger task picker if pending."""
+@router.get("/agent-status")
+def get_agent_status():
+    """
+    Return live agent status from memory/agent_state.json.
+    Used by the frontend Sprint Board to show a real-time agent activity indicator.
+    Includes agent_working flag so the frontend can pause polling during code changes.
+    """
     try:
-        from plane_agent import get_or_create_project, list_tasks, list_sprints
-        from memory_manager import load_state
+        from memory_manager import load_state, is_agent_working
+        state = load_state()
+        agents = state.get("agents", {})
+        today_session = state.get("today_session", {})
+        sprint_watcher = agents.get("sprint_watcher", {})
+        builder = agents.get("builder", {})
+        tester = agents.get("tester", {})
+        return JSONResponse({
+            "status": "success",
+            "agent_working": is_agent_working(),
+            "agent_working_task": state.get("agent_working_task", ""),
+            "sprint_watcher": {
+                "status": sprint_watcher.get("status", "idle"),
+                "current_task": sprint_watcher.get("current_task", "Idle"),
+                "last_updated": sprint_watcher.get("last_updated")
+            },
+            "builder": {
+                "status": builder.get("status", "idle"),
+                "current_task": builder.get("current_task", "Idle"),
+                "last_updated": builder.get("last_updated")
+            },
+            "tester": {
+                "status": tester.get("status", "idle"),
+                "current_task": tester.get("current_task", "Idle"),
+                "last_updated": tester.get("last_updated")
+            },
+            "today_session": today_session
+        })
+    except Exception as e:
+        return JSONResponse({"status": "error", "agent_working": False, "message": str(e)})
+
+
+@router.get("/agent-working")
+def get_agent_working():
+    """
+    Lightweight endpoint — frontend polls every 5s to check if the agent is
+    actively modifying code. When True, frontend should pause all data fetching
+    to prevent UI disruption from uvicorn hot-reloads and Vite HMR errors.
+    """
+    try:
+        from memory_manager import load_state, is_agent_working
+        state = load_state()
+        working = is_agent_working()
+        return JSONResponse({
+            "agent_working": working,
+            "task": state.get("agent_working_task", "") if working else "",
+            "since": state.get("agent_working_since") if working else None
+        })
+    except Exception:
+        return JSONResponse({"agent_working": False, "task": "", "since": None})
+
+
+@router.post("/clear-processed-ids")
+def clear_processed_task_ids():
+    """
+    Clear the persisted processed task IDs file so the sprint watcher can
+    re-pick tasks that were previously processed (e.g. after a sprint reset
+    or when tasks are restored from cancelled to To Do).
+    """
+    try:
+        from pathlib import Path
+        import json
+        pf = ROOT_DIR / "memory" / ".processed_task_ids.json"
+        if pf.exists():
+            try:
+                data = json.loads(pf.read_text(encoding="utf-8"))
+                count = len(data.get("entries", data.get("ids", [])))
+            except Exception:
+                count = 0
+            pf.unlink()
+            return JSONResponse({"status": "success", "message": f"Cleared {count} processed task IDs — watcher will re-scan on next trigger."})
+        return JSONResponse({"status": "success", "message": "No processed IDs file found — nothing to clear."})
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@router.get("/workspaces")
+def get_plane_workspaces():
+    """Fetch all available Plane workspaces and projects for workspace selection."""
+    cached = _workspaces_cache.get("payload")
+    if cached and time.time() - _workspaces_cache["ts"] < _workspaces_cache_ttl:
+        return JSONResponse(cached)
+    try:
+        from plane_agent import list_workspaces, list_projects
+        workspaces = list_workspaces()
+        data = []
+        for ws in workspaces:
+            slug = ws.get("slug") or ws.get("id") or "agentbuilder"
+            name = ws.get("name") or slug
+            projects = list_projects(slug)
+            data.append({
+                "name": name,
+                "slug": slug,
+                "projects": [
+                    {"id": p.get("id"), "name": p.get("name"), "identifier": p.get("identifier")}
+                    for p in projects
+                ]
+            })
+        payload = {"status": "success", "workspaces": data}
+        _workspaces_cache["payload"] = payload
+        _workspaces_cache["ts"] = time.time()
+        return JSONResponse(payload)
+    except Exception as e:
+        print(f"[Workspaces API Error]: {e}")
+        fallback = {
+            "status": "fallback",
+            "workspaces": [
+                {
+                    "name": "AgentBuilder Workspace",
+                    "slug": "agentbuilder",
+                    "projects": [
+                        {"id": "all", "name": "⚡ All Projects (Aggregate Workspace Tasks)", "identifier": "ALL"},
+                        {"id": "6ceb45ad-db0b-42eb-8de1-b4fd05d6593a", "name": "AI Analytics Dashboard", "identifier": "AAD"}
+                    ]
+                }
+            ]
+        }
+        _workspaces_cache["payload"] = fallback
+        _workspaces_cache["ts"] = time.time()
+        return JSONResponse(fallback)
+
+
+@router.get("/tasks")
+def get_sprint_tasks(workspace_slug: Optional[str] = Query(None), project_id: Optional[str] = Query(None)):
+    """Fetch live sprint tasks across projects in a workspace and trigger agent task picker."""
+    try:
+        from plane_agent import get_or_create_project, list_projects, list_tasks, list_sprints, list_active_sprint, update_plane_config_active_workspace_project
+        from memory_manager import load_state, save_state
 
         state = load_state()
-        project_id = state.get("plane_project_id") or get_or_create_project()
-        tasks = list_tasks(project_id)
-        sprints = list_sprints(project_id)
+        ws_str = workspace_slug if isinstance(workspace_slug, str) and workspace_slug else None
+        pid_str = project_id if isinstance(project_id, str) and project_id else None
 
-        current_sprint = sprints[0] if sprints else {"name": "Sprint 1 - Foundation", "id": "sprint-1"}
+        ws = ws_str or state.get("plane_workspace_slug") or "agentbuilder"
+        pid = pid_str or state.get("plane_project_id") or "all"
 
-        # Group tasks by state_group
+        cache_key = _sprint_cache_key(str(ws), str(pid))
+        cached_payload = _get_sprint_tasks_cache(cache_key)
+        if cached_payload is not None:
+            return JSONResponse(cached_payload, headers={"X-Sprint-Cache": "HIT"})
+
+        state["plane_workspace_slug"] = str(ws)
+        state["plane_project_id"] = str(pid)
+        save_state(state)
+        update_plane_config_active_workspace_project(str(ws), str(pid))
+
+        # Multi-Project Scanning and Exact Project Name Mapping
+        all_projects = list_projects(ws)
+        proj_map = {p.get("id"): (p.get("name") or p.get("identifier") or "Project") for p in all_projects if isinstance(p, dict) and p.get("id")}
+
+        projects_to_scan = []
+        if not pid or pid == "all":
+            # Do not call get_or_create_project here: a failed Plane project lookup
+            # must not turn a read-only board refresh into a slow POST request.
+            projects_to_scan = all_projects
+        else:
+            p_name = proj_map.get(pid, "AI Analytics Dashboard")
+            projects_to_scan = [{"id": pid, "name": p_name}]
+
+        active_sprint = None
+        all_raw_tasks = []
+        sprints = []
+
+        def scan_project(p_info):
+            p_id = p_info.get("id")
+            if not p_id:
+                return p_info, [], []
+            return p_info, list_tasks(p_id, ws), list_sprints(p_id, ws)
+
+        try:
+            with ThreadPoolExecutor(max_workers=min(4, max(1, len(projects_to_scan)))) as executor:
+                scans = [executor.submit(scan_project, p_info) for p_info in projects_to_scan]
+                for scan in as_completed(scans, timeout=6):
+                    try:
+                        p_info, p_tasks, p_sprints = scan.result()
+                    except Exception as _scan_err:
+                        print(f"[Sprint Router]: Project scan error (skipping): {_scan_err}")
+                        continue
+                    p_id = p_info.get("id")
+                    p_name = p_info.get("name") or proj_map.get(p_id, "Project")
+                    if not p_id:
+                        continue
+                    for t in p_tasks:
+                        t["project_id"] = p_id
+                        t["project_name"] = p_name
+                        all_raw_tasks.append(t)
+
+                    if not sprints and p_sprints:
+                        sprints = p_sprints
+                    if not active_sprint and p_sprints:
+                        active_sprint = p_sprints[-1]
+        except Exception as _te:
+            print(f"[Sprint Router]: Scan timeout or error — using partial results ({len(all_raw_tasks)} tasks so far): {_te}")
+
+        # Resolve the display sprint: prefer active (date-valid), then newest fallback
+        if active_sprint:
+            current_sprint = active_sprint
+        elif sprints:
+            # Sort by created_at desc so we get the newest, not the expired first one
+            current_sprint = sorted(sprints, key=lambda s: s.get("created_at", ""), reverse=True)[0]
+        else:
+            current_sprint = {"name": "Sprint 1 - Foundation", "id": "sprint-1"}
+
+        # Build cycle-task membership map so we only show tasks in the ACTIVE sprint.
+        # Tasks in expired cycles are excluded — Plane auto-cancels them and they
+        # should never trigger the watcher or appear as actionable.
+        active_cycle_task_ids: set = set()
+        if current_sprint.get("id") and current_sprint["id"] != "sprint-1":
+            try:
+                cycle_id = current_sprint["id"]
+                cycle_issues_url = (
+                    f"https://api.plane.so/api/v1/workspaces/{ws}/projects/"
+                    f"{projects_to_scan[0]['id']}/cycles/{cycle_id}/cycle-issues/"
+                )
+                import httpx as _httpx
+                _headers = {"X-API-Key": os.getenv("PLANE_API_TOKEN", ""), "Content-Type": "application/json"}
+                with _httpx.Client(timeout=10) as _c:
+                    _resp = _c.get(cycle_issues_url, headers=_headers)
+                    if _resp.status_code == 200:
+                        for ci in _resp.json().get("results", []):
+                            issue_id = ci.get("issue") or (ci.get("issue_detail") or {}).get("id")
+                            if issue_id:
+                                active_cycle_task_ids.add(issue_id)
+            except Exception as _ce:
+                print(f"[Sprint Router]: Could not fetch cycle issues (non-fatal): {_ce}")
+
+        # If we got cycle membership, filter raw tasks to this sprint only.
+        # If cycle fetch failed (empty set), show all tasks as a safe fallback.
+        if active_cycle_task_ids:
+            all_raw_tasks = [t for t in all_raw_tasks if t.get("id") in active_cycle_task_ids]
+
+        backlog_list = []
         todo_list = []
         in_progress_list = []
         completed_list = []
+        cancelled_list = []   # Explicitly track cancelled — NOT the same as backlog
 
         has_actionable_tasks = False
 
-        for task in tasks:
+        for task in all_raw_tasks:
             sg = (task.get("state_group") or "").lower()
             state_name = str(task.get("state_detail", {}).get("name") if isinstance(task.get("state_detail"), dict) else task.get("state", "")).lower()
 
@@ -82,43 +344,89 @@ def get_sprint_tasks():
                 "story_points": task.get("estimate_point") or 3,
                 "state_group": sg,
                 "state_name": state_name,
+                "project_id": task.get("project_id"),
+                "project_name": task.get("project_name", "Project"),
                 "created_at": task.get("created_at"),
                 "updated_at": task.get("updated_at"),
                 "description": task.get("description_stripped") or task.get("description_html") or ""
             }
 
-            if sg in ("completed", "done"):
+            if sg in ("completed", "done", "closed"):
                 completed_list.append(task_obj)
-            elif sg in ("started", "in_progress", "in progress"):
+            elif sg in ("cancelled", "wont_fix", "rejected", "duplicate"):
+                # Cancelled tasks are NOT backlog — they are closed/rejected
+                # Do NOT set has_actionable_tasks for cancelled tasks
+                cancelled_list.append(task_obj)
+            elif sg in ("started", "in_progress", "in progress", "active"):
+                # In Progress — agent is already working on these OR user moved them manually.
+                # Do NOT mark as actionable — the agent must never auto-pick 'started' tasks.
                 in_progress_list.append(task_obj)
-                has_actionable_tasks = True
-            else:
+            elif sg in ("todo", "to_do", "triaged"):
                 todo_list.append(task_obj)
                 has_actionable_tasks = True
+            elif sg in ("unstarted", "backlog"):
+                # Backlog = holding area (not yet ready for pickup)
+                # unstarted = explicitly To Do (ready for pickup)
+                backlog_list.append(task_obj)
+                if sg == "unstarted":   # Only unstarted is actionable, not raw backlog
+                    has_actionable_tasks = True
+            else:
+                # Unknown state — treat as backlog display, not actionable
+                backlog_list.append(task_obj)
 
-        # If there are open or in-progress tasks, trigger the background Sprint Watcher Agent to process them automatically!
-        if has_actionable_tasks:
-            trigger_watcher_in_background()
+        # Trigger watcher ONLY for tasks explicitly in unstarted/todo/triaged/backlog state.
+        # These mirror AGENT_PICKUP_GROUPS in sprint_watcher_agent.py exactly.
+        # "started"   = In Progress (human or agent action) — NEVER trigger watcher for these
+        # "cancelled" = closed/rejected by human — NEVER trigger watcher
+        TRIGGER_GROUPS = {"unstarted", "todo", "triaged"}
+        pickup_tasks = [
+            task for task in all_raw_tasks
+            if (task.get("state_group") or "").lower() in TRIGGER_GROUPS
+            and (task.get("state_group") or "").lower() not in {"started", "in_progress", "completed", "cancelled"}
+        ]
+        has_pickup_tasks = len(pickup_tasks) > 0
+        if has_pickup_tasks:
+            # Pass the first real project UUID to the watcher so it can resolve tasks correctly.
+            # Never pass "all" — that causes the watcher's _verify_task_still_pickupable to fail.
+            real_pid = pid if (pid and pid != "all" and len(str(pid)) > 10) else None
+            if not real_pid and pickup_tasks:
+                real_pid = pickup_tasks[0].get("project_id")
+            if not real_pid and projects_to_scan:
+                real_pid = projects_to_scan[0].get("id")
+            print(f"[Sprint Router]: {len(pickup_tasks)} actionable task(s) found — triggering watcher (project_id={real_pid})")
+            trigger_watcher_in_background(ws, real_pid)
+        else:
+            print(f"[Sprint Router]: No pickup-eligible tasks found — watcher not triggered.")
 
-        total_tasks = len(tasks)
+        total_tasks = len(all_raw_tasks)
+        # Completion % excludes cancelled tasks from denominator (they're not part of sprint scope)
+        open_tasks = total_tasks - len(cancelled_list)
         completed_count = len(completed_list)
-        completion_pct = round((completed_count / total_tasks * 100), 1) if total_tasks > 0 else 100.0
+        completion_pct = round((completed_count / open_tasks * 100), 1) if open_tasks > 0 else 100.0
 
-        return JSONResponse({
+        payload = {
             "status": "success",
+            "workspace_slug": ws,
+            "project_id": pid,
+            "scanned_projects_count": len(projects_to_scan),
             "sprint": {
                 "name": current_sprint.get("name", "Sprint AAD-5"),
                 "id": current_sprint.get("id"),
                 "total_tasks": total_tasks,
+                "open_tasks": open_tasks,
                 "completed_tasks": completed_count,
                 "in_progress_tasks": len(in_progress_list),
                 "todo_tasks": len(todo_list),
+                "backlog_tasks": len(backlog_list),
+                "cancelled_tasks": len(cancelled_list),
                 "completion_percentage": completion_pct
             },
             "tasks": {
+                "backlog": backlog_list,
                 "todo": todo_list,
                 "in_progress": in_progress_list,
                 "completed": completed_list,
+                "cancelled": cancelled_list,  # Separated from backlog — these are closed/rejected
                 "all": [
                     {
                         "id": t.get("id"),
@@ -126,17 +434,20 @@ def get_sprint_tasks():
                         "priority": t.get("priority", "medium"),
                         "points": t.get("estimate_point") or 3,
                         "status": t.get("state_group", "unstarted"),
+                        "project_id": t.get("project_id"),
+                        "project_name": t.get("project_name", "Project"),
                         "description": t.get("description_stripped") or ""
                     }
-                    for t in tasks
+                    for t in all_raw_tasks
                 ]
             },
             "active_agent_tasks": state.get("active_tasks", [])
-        })
+        }
+        _set_sprint_tasks_cache(cache_key, payload)
+        return JSONResponse(payload, headers={"X-Sprint-Cache": "MISS"})
 
     except Exception as e:
-        print(f"[Sprints API Error]: {e}")
-        # Fallback to local memory state
+        print(f"[Sprints API Error]: {repr(e)}")
         from memory_manager import load_state
         state = load_state()
         return JSONResponse({
@@ -148,13 +459,67 @@ def get_sprint_tasks():
                 "completed_tasks": 18,
                 "in_progress_tasks": 0,
                 "todo_tasks": 0,
+                "backlog_tasks": 0,
                 "completion_percentage": 100.0
             },
-            "tasks": {
-                "todo": [],
-                "in_progress": [],
-                "completed": [],
-                "all": []
-            },
+            "tasks": {"backlog": [], "todo": [], "in_progress": [], "completed": [], "all": []},
             "active_agent_tasks": state.get("active_tasks", [])
         })
+
+
+@router.post("/extend-sprint")
+def extend_sprint_endpoint(
+    project_id: str = Body(..., embed=True),
+    cycle_id: str = Body(..., embed=True),
+    days: int = Body(14, embed=True),
+    workspace_slug: Optional[str] = Body(None, embed=True)
+):
+    """
+    Extend the active sprint's end_date by N days (default 14).
+    Prevents Plane from auto-cancelling unfinished tasks when a cycle expires.
+    Called from the Sprint Board when the UI detects an expiring/expired sprint.
+    """
+    try:
+        from plane_agent import extend_sprint
+        from datetime import datetime, timedelta
+
+        ws = workspace_slug or "agentbuilder"
+        new_end_date = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+        result = extend_sprint(project_id, cycle_id, new_end_date, ws)
+        if result:
+            return JSONResponse({
+                "status": "success",
+                "message": f"Sprint extended to {new_end_date} (+{days} days)",
+                "new_end_date": new_end_date,
+                "cycle": result
+            })
+        return JSONResponse({"status": "error", "message": "Plane API returned empty response — check project_id and cycle_id"}, status_code=400)
+    except Exception as e:
+        print(f"[Extend Sprint Error]: {repr(e)}")
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@router.post("/restore-task")
+def restore_cancelled_task(
+    project_id: str = Body(..., embed=True),
+    task_id: str = Body(..., embed=True),
+    workspace_slug: Optional[str] = Body(None, embed=True)
+):
+    """
+    Restore a task that was auto-cancelled by Plane's sprint-expiry process
+    back to 'unstarted' (To Do) so it can be picked up and worked on again.
+    Only acts on tasks that are actually in a 'cancelled' state — safe to call
+    on any task.
+    """
+    try:
+        from plane_agent import restore_task_from_cancelled
+        ws = workspace_slug or "agentbuilder"
+        result = restore_task_from_cancelled(project_id, task_id, ws)
+        if result.get("status") == "already_ok":
+            return JSONResponse({"status": "success", "message": f"Task is already in '{result['group']}' — no change needed"})
+        if result:
+            return JSONResponse({"status": "success", "message": "Task restored to To Do (unstarted)", "task": result})
+        return JSONResponse({"status": "error", "message": "Could not restore task — check project_id and task_id"}, status_code=400)
+    except Exception as e:
+        print(f"[Restore Task Error]: {repr(e)}")
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)

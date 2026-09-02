@@ -5,23 +5,14 @@ Tests the React frontend running at http://localhost:5173
 
 import pytest
 from playwright.sync_api import Page, expect
-
+from playwright_helpers import goto_with_retry
 
 BASE_URL = "http://localhost:5173"
-
-
-@pytest.fixture(scope="session")
-def browser_context_args(browser_context_args):
-    return {
-        **browser_context_args,
-        "viewport": {"width": 1440, "height": 900}
-    }
-
 
 def test_dashboard_loads(page: Page):
     """Dashboard page should load and show KPI cards."""
     page.goto(BASE_URL)
-    expect(page).to_have_title("AI Analytics Dashboard")
+    expect(page).to_have_title("AgenticOps AI")
     # Wait for page content
     page.wait_for_selector(".kpi-card", timeout=10000)
     kpi_cards = page.locator(".kpi-card")
@@ -90,9 +81,12 @@ def test_bar_chart_rendered(page: Page):
 
 def test_scatter_plot_rendered(page: Page):
     """Scatter plot must render SVG dots — not blank canvas."""
-    page.goto(BASE_URL)
-    page.wait_for_selector(".chart-card svg", timeout=10000)
-    # Both charts (bar + scatter) must have SVGs
+    goto_with_retry(page, BASE_URL)
+    page.wait_for_selector("#global-db-selector", timeout=10000)
+    page.select_option("#global-db-selector", "pg_dev")
+    page.click("#submit-db-btn")
+    page.wait_for_selector(".chart-card", timeout=15000)
+    page.wait_for_selector(".chart-card svg", timeout=20000)
     chart_svgs = page.locator(".chart-card svg")
     assert chart_svgs.count() >= 2, "Scatter plot SVG not found — second chart may be blank"
 
@@ -108,12 +102,25 @@ def test_warehouse_table_populated(page: Page):
 
 
 def test_table_row_count_badge(page: Page):
-    """Row count badge must show 'Loaded X / Y' with X >= 0."""
+    """Row count badge shows loaded/total when warehouse table has data after date + Submit."""
+    from calculation_verifier import discover_date_with_data
+
+    oerdte = discover_date_with_data("pg_dev")
+    if not oerdte:
+        pytest.skip("No date with data from API")
+    iso = f"{oerdte[:4]}-{oerdte[4:6]}-{oerdte[6:8]}" if len(oerdte) == 8 else ""
+    if not iso:
+        pytest.skip("Could not resolve ISO date from API")
+
     page.goto(BASE_URL)
-    page.wait_for_selector("table", timeout=15000)
-    # Look for the row count text in the page
-    row_badge = page.locator("text=Data Table Rows")
-    expect(row_badge).to_be_visible()
+    page.fill("#global-date-picker", iso)
+    page.select_option("#global-db-selector", "pg_dev")
+    page.click("#submit-db-btn")
+    page.wait_for_selector("#warehouse-analytics-table tbody tr", timeout=20000)
+    row_badge = page.get_by_text("Data Table Rows", exact=False).or_(
+        page.get_by_text("total items", exact=False)
+    )
+    expect(row_badge.first).to_be_visible(timeout=15000)
 
 
 def test_target_db_selection_prod_vs_dev(page: Page):

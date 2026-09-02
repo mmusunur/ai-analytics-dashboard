@@ -1,20 +1,53 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  CheckCircle2, Clock, PlayCircle, AlertCircle, RefreshCw,
-  Search, Layers, Cpu, Server, CheckSquare, Zap, Filter, Menu
+  CheckCircle2, Clock, PlayCircle, RefreshCw,
+  Search, Layers, Folder, Inbox, ListTodo, FolderCheck, Activity,
+  AlertTriangle, CalendarClock, RotateCcw
 } from 'lucide-react'
+import axios from 'axios'
+import { useAgentWorking } from '../context/AgentWorkingContext'
+import { useLivePoll } from '../hooks/useLivePoll'
+import MonitorRefreshBar from '../components/MonitorRefreshBar'
+import SprintMonitorPanel from '../components/SprintMonitorPanel'
+import TaskQueuePanel from '../components/TaskQueuePanel'
+import TaskDeliveryNotice from '../components/TaskDeliveryNotice'
 
-const API_BASE = 'http://localhost:8000'
+const API = import.meta.env.VITE_API_URL || ''
+const SPRINT_CACHE_KEY = 'agenticops:sprint-board-cache'
+const WORKSPACE_CACHE_KEY = 'agenticops:sprint-workspaces-cache'
+
+function readBrowserCache(key, fallback) {
+  try {
+    const value = window.localStorage.getItem(key)
+    return value ? JSON.parse(value) : fallback
+  } catch {
+    return fallback
+  }
+}
 
 export default function SprintBoard() {
-  const [sprintData, setSprintData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const { agentWorking, agentWorkingTask } = useAgentWorking()
   const [searchTerm, setSearchTerm] = useState('')
-  
-  // Independent Column Collapse States
+
+  // Workspace & Project state
+  const [workspaces, setWorkspaces] = useState(() => readBrowserCache(WORKSPACE_CACHE_KEY, [{
+    name: 'agentbuilder',
+    slug: 'agentbuilder',
+    projects: []
+  }]))
+  const [selectedWorkspace, setSelectedWorkspace] = useState('agentbuilder')
+  const [selectedProject, setSelectedProject] = useState('all')
+
+  // Sprint expiry state
+  const [sprintExpiry, setSprintExpiry] = useState(null)   // null | 'expiring_today' | 'expired'
+  const [extendingSprint, setExtendingSprint] = useState(false)
+  const [restoringTasks, setRestoringTasks] = useState(false)
+  const [actionMsg, setActionMsg] = useState(null)
+
+  // Column Collapse States
   const [collapsedColumns, setCollapsedColumns] = useState({
+    backlog: false,
     todo: false,
     in_progress: false,
     completed: false
@@ -27,13 +60,12 @@ export default function SprintBoard() {
     }))
   }
 
-  // Priority Enable/Disable Toggles State
+  // Priority Filter State
   const [enabledPriorities, setEnabledPriorities] = useState({
     URGENT: true,
     HIGH: true,
     MEDIUM: true,
-    LOW: true,
-    NONE: true
+    LOW: true
   })
 
   const togglePriority = (p) => {
@@ -43,26 +75,272 @@ export default function SprintBoard() {
     }))
   }
 
-  const fetchSprintTasks = async () => {
+  const fetchWorkspaces = async () => {
     try {
-      setLoading(true)
-      const res = await fetch(`${API_BASE}/api/sprints/tasks`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setSprintData(data)
-      setError(null)
+      const res = await axios.get(`${API}/api/sprints/workspaces`, { timeout: 3000 })
+      if (res.data?.workspaces?.length) {
+        const nextWorkspaces = res.data.workspaces.map((workspace) => ({
+          ...workspace,
+          projects: workspace.projects || []
+        }))
+        setWorkspaces(nextWorkspaces)
+        window.localStorage.setItem(WORKSPACE_CACHE_KEY, JSON.stringify(nextWorkspaces))
+      }
     } catch (err) {
-      console.error('Failed to fetch live sprint tasks:', err)
-      setError('Could not connect to live Sprint Watcher agent. Displaying cached sprint state.')
-    } finally {
-      setLoading(false)
+      console.error('[SprintBoard] Workspace fetch error:', err)
     }
   }
 
+  const fetchSprintTasksApi = useCallback(async () => {
+    const params = {}
+    if (selectedWorkspace) params.workspace_slug = selectedWorkspace
+    if (selectedProject) params.project_id = selectedProject
+
+    if (selectedProject && selectedProject !== 'all') {
+      const allProjectsData = readBrowserCache(`${SPRINT_CACHE_KEY}:all`, readBrowserCache(SPRINT_CACHE_KEY, null))
+      const matchingTasks = (allProjectsData?.tasks?.all || []).filter((task) => task.project_id === selectedProject)
+      if (matchingTasks.length) {
+        const matchingIds = new Set(matchingTasks.map((task) => task.id))
+        const filterTasks = (tasks = []) => tasks.filter((task) => matchingIds.has(task.id))
+        return {
+          ...allProjectsData,
+          project_id: selectedProject,
+          tasks: {
+            ...allProjectsData.tasks,
+            backlog: filterTasks(allProjectsData.tasks.backlog),
+            todo: filterTasks(allProjectsData.tasks.todo),
+            in_progress: filterTasks(allProjectsData.tasks.in_progress),
+            completed: filterTasks(allProjectsData.tasks.completed),
+            cancelled: filterTasks(allProjectsData.tasks.cancelled),
+            all: matchingTasks
+          }
+        }
+      }
+    }
+
+    try {
+      const res = await axios.get(`${API}/api/sprints/tasks`, { params, timeout: 12000 })
+      return res.data
+    } catch (err) {
+      throw err
+    }
+  }, [selectedWorkspace, selectedProject])
+
+  const fetchFleetApi = useCallback(async () => {
+    const res = await axios.get(`${API}/api/agents/status`, { timeout: 5000 })
+    return res.data
+  }, [])
+
+  const {
+    data: sprintData,
+    lastUpdated: tasksLastUpdated,
+    isRefreshing: tasksRefreshing,
+    isInitialLoad: tasksInitialLoad,
+    error: tasksError,
+    refresh: refreshTasks,
+    secondsUntilRefresh: tasksCountdown,
+    paused: tasksPaused,
+    softPaused: tasksSoftPaused,
+  } = useLivePoll(fetchSprintTasksApi, {
+    intervalMs: 4000,
+    pause: agentWorking,
+    pauseIntervalMs: 6000,
+    enabled: true,
+    deps: [selectedWorkspace, selectedProject],
+  })
+
+  const { data: fleetData } = useLivePoll(fetchFleetApi, {
+    intervalMs: 2000,
+    pause: false,
+    enabled: true,
+  })
+
+  const [staleFleetData, setStaleFleetData] = useState(null)
   useEffect(() => {
-    fetchSprintTasks()
-    const interval = setInterval(fetchSprintTasks, 10000)
-    return () => clearInterval(interval)
+    if (fleetData) setStaleFleetData(fleetData)
+  }, [fleetData])
+  const displayFleetData = fleetData || staleFleetData
+
+  const pipeline = displayFleetData?.pipeline || {}
+  const taskQueue = displayFleetData?.task_queue || {}
+  const [dismissedDeliveryId, setDismissedDeliveryId] = useState(null)
+
+  const latestDelivery = useMemo(() => {
+    if (pipeline?.build_usage_guide?.headline && pipeline?.task_id) {
+      return {
+        guide: pipeline.build_usage_guide,
+        taskTitle: pipeline.task_title,
+        id: pipeline.task_id,
+      }
+    }
+    const recent = (taskQueue?.completed || []).find((t) => t.delivery_guide?.headline)
+    if (recent) {
+      return { guide: recent.delivery_guide, taskTitle: recent.title, id: recent.id }
+    }
+    return null
+  }, [pipeline, taskQueue])
+
+  const queueMap = useMemo(() => {
+    const m = {}
+    if (taskQueue?.active?.id) {
+      m[taskQueue.active.id] = { ...taskQueue.active, queue_status: 'active' }
+    }
+    for (const t of taskQueue?.pending || []) {
+      m[t.id] = { ...t, queue_status: 'pending', progress_pct: 0, phase: 'queued' }
+    }
+    for (const t of taskQueue?.completed || []) {
+      m[t.id] = { ...t, queue_status: 'completed', progress_pct: 100, phase: 'done' }
+    }
+    for (const t of taskQueue?.failed || []) {
+      m[t.id] = { ...t, queue_status: 'failed', phase: 'failed' }
+    }
+    // Pipeline is source of truth for the live task — overrides stale queue completed badge
+    const pid = pipeline?.task_id
+    const pphase = pipeline?.phase
+    const pipelineLive = pid && pphase && !['idle', 'done', 'failed'].includes(pphase)
+    if (pipelineLive) {
+      m[pid] = {
+        id: pid,
+        title: pipeline.task_title,
+        queue_status: 'active',
+        phase: pphase,
+        progress_pct: pipeline.progress_pct ?? 0,
+        active_agent: pipeline.active_agent,
+        message: pipeline.message,
+      }
+    }
+    return m
+  }, [taskQueue, pipeline])
+  const watcherActive = (fleetData?.agents?.sprint_watcher?.status || 'running') === 'running'
+  const [staleSprintData, setStaleSprintData] = useState(() => readBrowserCache(SPRINT_CACHE_KEY, null))
+  useEffect(() => {
+    if (sprintData?.tasks) {
+      setStaleSprintData(sprintData)
+      window.localStorage.setItem(SPRINT_CACHE_KEY, JSON.stringify(sprintData))
+      if (sprintData.project_id === 'all') {
+        window.localStorage.setItem(`${SPRINT_CACHE_KEY}:all`, JSON.stringify(sprintData))
+      }
+    }
+  }, [sprintData])
+
+  useEffect(() => {
+    const taskProjects = (sprintData?.tasks?.all || [])
+      .filter((task) => task.project_id && task.project_id !== 'all')
+      .reduce((projects, task) => {
+        projects.set(task.project_id, {
+          id: task.project_id,
+          name: task.project_name || 'Project',
+          identifier: task.project_name || task.project_id
+        })
+        return projects
+      }, new Map())
+    if (!taskProjects.size) return
+
+    setWorkspaces((current) => current.map((workspace) => ({
+      ...workspace,
+      projects: Array.from(new Map([
+        ...(workspace.projects || []).map((project) => [project.id, project]),
+        ...taskProjects
+      ]).values())
+    })))
+  }, [sprintData])
+
+  useEffect(() => {
+    window.localStorage.setItem(WORKSPACE_CACHE_KEY, JSON.stringify(workspaces))
+  }, [workspaces])
+
+  const fallbackSprintData = {
+    sprint: { name: 'Current Sprint', completion_percentage: 0, open_tasks: 0, in_progress_tasks: 0 },
+    tasks: { backlog: [], todo: [], in_progress: [], completed: [], cancelled: [], all: [] }
+  }
+  const loadedSprintData = sprintData || staleSprintData
+  const displaySprintData = loadedSprintData?.tasks?.all?.length ? loadedSprintData : fallbackSprintData
+  const loading = false
+  const hasUsableSprintData = Boolean(sprintData || staleSprintData)
+  const error = null
+
+  // Detect sprint expiry whenever sprint data changes
+  useEffect(() => {
+    const sprint = sprintData?.sprint
+    if (!sprint?.end_date) { setSprintExpiry(null); return }
+    try {
+      const end = new Date(sprint.end_date)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      end.setHours(0, 0, 0, 0)
+      const diffDays = Math.floor((end - today) / 86400000)
+      if (diffDays < 0) setSprintExpiry('expired')
+      else if (diffDays === 0) setSprintExpiry('expiring_today')
+      else setSprintExpiry(null)
+    } catch { setSprintExpiry(null) }
+  }, [sprintData])
+
+  const handleExtendSprint = async () => {
+    const sprint = sprintData?.sprint
+    if (!sprint?.id || sprint.id === 'sprint-1') {
+      setActionMsg({ type: 'error', text: 'No active sprint found to extend. Check your Plane project.' })
+      return
+    }
+    // Resolve the project ID: use the first scanned project
+    const pid = selectedProject !== 'all' ? selectedProject : sprintData?.project_id
+    if (!pid || pid === 'all') {
+      setActionMsg({ type: 'error', text: 'Please select a specific project (not "All Projects") to extend the sprint.' })
+      return
+    }
+    setExtendingSprint(true)
+    setActionMsg(null)
+    try {
+      const res = await axios.post(`${API}/api/sprints/extend-sprint`, {
+        project_id: pid,
+        cycle_id: sprint.id,
+        days: 14,
+        workspace_slug: selectedWorkspace
+      })
+      if (res.data?.status === 'success') {
+        setActionMsg({ type: 'success', text: `✅ ${res.data.message}` })
+        setTimeout(() => refreshTasks(true), 1500)
+      } else {
+        setActionMsg({ type: 'error', text: res.data?.message || 'Sprint extension failed.' })
+      }
+    } catch (err) {
+      setActionMsg({ type: 'error', text: `Extension failed: ${err.response?.data?.message || err.message}` })
+    } finally {
+      setExtendingSprint(false)
+    }
+  }
+
+  const handleRestoreAllCancelled = async () => {
+    const cancelledTasks = sprintData?.tasks?.cancelled || []
+    if (!cancelledTasks.length) {
+      setActionMsg({ type: 'info', text: 'No cancelled tasks found to restore.' })
+      return
+    }
+    setRestoringTasks(true)
+    setActionMsg(null)
+    let restored = 0, failed = 0
+    for (const task of cancelledTasks) {
+      try {
+        const pid = task.project_id || selectedProject
+        if (!pid || pid === 'all') { failed++; continue }
+        const res = await axios.post(`${API}/api/sprints/restore-task`, {
+          project_id: pid,
+          task_id: task.id,
+          workspace_slug: selectedWorkspace
+        })
+        if (res.data?.status === 'success') restored++
+        else failed++
+      } catch { failed++ }
+    }
+    setActionMsg({
+      type: restored > 0 ? 'success' : 'error',
+      text: `↩️ Restored ${restored}/${cancelledTasks.length} tasks to To Do${failed > 0 ? ` (${failed} failed)` : ''}.`
+    })
+    setTimeout(() => refreshTasks(true), 1500)
+    setRestoringTasks(false)
+  }
+
+  useEffect(() => {
+    fetchWorkspaces()
   }, [])
 
   const priorityColors = {
@@ -72,43 +350,146 @@ export default function SprintBoard() {
     low: { bg: 'rgba(107, 114, 128, 0.15)', text: '#9ca3af', border: 'rgba(107, 114, 128, 0.4)' }
   }
 
-  const allTasks = sprintData?.tasks?.all || []
-  const filteredTasks = allTasks.filter(task => {
+  const allTasks = displaySprintData?.tasks?.all || []
+  const pipelineLiveId = pipeline?.task_id && pipeline?.phase && !['idle', 'done', 'failed'].includes(pipeline.phase)
+    ? pipeline.task_id
+    : null
+
+  const excludeLiveFrom = (list) => (pipelineLiveId ? list.filter((t) => t.id !== pipelineLiveId) : list)
+
+  // Explicitly filter backlog to never contain cancelled tasks (defensive guard)
+  const backlogTasks = excludeLiveFrom(displaySprintData?.tasks?.backlog || []).filter(
+    t => !['cancelled', 'wont_fix', 'rejected'].includes((t.state_group || '').toLowerCase())
+  )
+  const todoTasks = excludeLiveFrom(displaySprintData?.tasks?.todo || [])
+  const inProgressTasks = displaySprintData?.tasks?.in_progress || []
+  const completedTasks = excludeLiveFrom(displaySprintData?.tasks?.completed || [])
+  const cancelledTasks = displaySprintData?.tasks?.cancelled || []
+
+  const augmentedInProgress = useMemo(() => {
+    if (!pipelineLiveId) return inProgressTasks
+    if (inProgressTasks.some((t) => t.id === pipelineLiveId)) return inProgressTasks
+    const fromAll = allTasks.find((t) => t.id === pipelineLiveId)
+    const liveTask = fromAll || {
+      id: pipelineLiveId,
+      name: pipeline.task_title || 'Active pipeline task',
+      priority: 'high',
+      state_group: 'started',
+      project_id: selectedProject,
+      project_name: 'Active pipeline'
+    }
+    return [liveTask, ...inProgressTasks]
+  }, [inProgressTasks, pipelineLiveId, allTasks, pipeline, selectedProject])
+
+  const visibleInProgressTasks = augmentedInProgress
+
+  const filterFn = (task) => {
     const matchesSearch = task.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (task.description && task.description.toLowerCase().includes(searchTerm.toLowerCase()))
     const pKey = (task.priority || 'MEDIUM').toUpperCase()
     const isPriorityEnabled = enabledPriorities[pKey] !== false
     return matchesSearch && isPriorityEnabled
-  })
-
-  const todoTasks = filteredTasks.filter(t => t.status === 'unstarted' || t.status === 'backlog' || t.status === 'todo')
-  const inProgressTasks = filteredTasks.filter(t => t.status === 'started' || t.status === 'in_progress')
-  const completedTasks = filteredTasks.filter(t => t.status === 'completed' || t.status === 'done')
-
-  const sprintInfo = sprintData?.sprint || {
-    name: 'Sprint AAD-5 · Real-Time Warehouse Analytics',
-    total_tasks: allTasks.length,
-    completed_tasks: completedTasks.length,
-    in_progress_tasks: inProgressTasks.length,
-    todo_tasks: todoTasks.length,
-    completion_percentage: allTasks.length > 0 ? ((completedTasks.length / allTasks.length) * 100).toFixed(1) : 100
   }
+
+  const filteredBacklog = backlogTasks.filter(filterFn)
+  const filteredTodo = todoTasks.filter(filterFn)
+  const filteredInProgress = augmentedInProgress.filter(filterFn)
+  const filteredCompleted = completedTasks.filter(filterFn)
+
+  const sprintInfo = displaySprintData?.sprint || {
+    name: 'Sprint AAD-5 · Multi-Project Sprint Board',
+    total_tasks: allTasks.length,
+    open_tasks: allTasks.length - cancelledTasks.length,
+    completed_tasks: completedTasks.length,
+    in_progress_tasks: visibleInProgressTasks.length,
+    todo_tasks: todoTasks.length,
+    backlog_tasks: backlogTasks.length,
+    cancelled_tasks: cancelledTasks.length,
+    completion_percentage: allTasks.length > 0
+      ? ((completedTasks.length / Math.max(allTasks.length - cancelledTasks.length, 1)) * 100).toFixed(1)
+      : 100
+  }
+
+  const activeWsObj = workspaces.find(w => w.slug === selectedWorkspace) || workspaces[0]
+  const activeProjects = activeWsObj?.projects || []
+  const selectedProjObj = activeProjects.find(p => p.id === selectedProject)
+  const displayProjName = selectedProject === 'all' ? 'All Projects' : (selectedProjObj?.name || selectedProject)
+  const formattedTitle = `${selectedWorkspace} / ${displayProjName} — ${sprintInfo.name}`
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
-      style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}
+      style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto' }}
     >
-      {/* ── Sprint Header Banner ── */}
+      <div style={{ marginBottom: '8px' }}>
+        <h1 style={{ fontSize: '26px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+          Sprint Monitor & Board
+        </h1>
+        <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '6px' }}>
+          Live Plane tasks with auto-refresh — watcher picks up To Do / Unstarted tasks automatically.
+        </p>
+      </div>
+
+      {loading && (
+        <div
+          id="sprint-board-loading"
+          style={{
+            padding: '20px 24px',
+            marginBottom: '20px',
+            background: 'rgba(124,58,237,0.12)',
+            border: '1px solid rgba(124,58,237,0.35)',
+            borderRadius: '12px',
+            color: 'var(--text-secondary)',
+            fontSize: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+          }}
+        >
+          <RefreshCw size={16} className="spin" color="#a78bfa" />
+          Loading sprint tasks from Plane… this can take a few seconds on first refresh.
+        </div>
+      )}
+
+      <MonitorRefreshBar
+        title="Sprint Board Sync"
+        lastUpdated={tasksLastUpdated}
+        isRefreshing={(tasksRefreshing || loading) && !hasUsableSprintData}
+        paused={tasksPaused}
+        softPaused={tasksSoftPaused}
+        agentWorking={agentWorking}
+        secondsUntilRefresh={tasksCountdown}
+        error={error}
+        onRefresh={refreshTasks}
+        intervalLabel={tasksSoftPaused ? '6s slow' : '4s'}
+      />
+
+      <SprintMonitorPanel
+        pipeline={pipeline}
+        agentWorking={agentWorking}
+        agentWorkingTask={agentWorkingTask}
+        inProgressCount={visibleInProgressTasks.length}
+        todoCount={todoTasks.length}
+        watcherActive={watcherActive}
+        queuePending={taskQueue?.pending?.length || 0}
+      />
+
+      {latestDelivery && latestDelivery.id !== dismissedDeliveryId && (
+        <TaskDeliveryNotice
+          guide={latestDelivery.guide}
+          taskTitle={latestDelivery.taskTitle}
+          onDismiss={() => setDismissedDeliveryId(latestDelivery.id)}
+        />
+      )}
+
+      <TaskQueuePanel taskQueue={taskQueue} pipeline={pipeline} />
+
       <div style={{
         background: 'linear-gradient(135deg, rgba(124,58,237,0.12) 0%, rgba(6,182,212,0.12) 100%)',
-        border: '1px solid rgba(124,58,237,0.3)',
-        borderRadius: '16px',
-        padding: '24px',
-        marginBottom: '24px',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+        border: '1px solid rgba(124,58,237,0.3)', borderRadius: '16px',
+        padding: '24px', marginBottom: '24px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           <div>
@@ -118,42 +499,112 @@ export default function SprintBoard() {
                 color: '#fff', fontSize: '11px', fontWeight: 800,
                 padding: '4px 10px', borderRadius: '20px', textTransform: 'uppercase', letterSpacing: '0.5px'
               }}>
-                Plane Active Sprint
+                Plane Multi-Project Sprint Board
               </span>
               <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                 🤖 Synchronized via Sprint Watcher Agent
               </span>
             </div>
-            <h1 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '8px', marginBottom: '4px' }}>
-              {sprintInfo.name}
-            </h1>
+            <h2 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '8px', marginBottom: '4px' }}>
+              {formattedTitle}
+            </h2>
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-              Real-time monitoring of tasks read directly from Plane project by AI agents
+              Real-time task monitoring &amp; execution across Plane workspace projects (Backlog, Todo, In Progress, Completed).
             </p>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Dynamic Workspace & Project Dropdown Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              background: 'rgba(15, 23, 42, 0.95)', padding: '8px 14px', borderRadius: '10px',
+              border: '1px solid rgba(124, 58, 237, 0.5)', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+            }}>
+              <Layers size={15} color="#A78BFA" />
+              <span style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 600, letterSpacing: '0.5px' }}>WORKSPACE:</span>
+              <select
+                id="sprint-board-workspace-select"
+                value={selectedWorkspace}
+                onChange={(e) => {
+                  const wsSlug = e.target.value
+                  setSelectedWorkspace(wsSlug)
+                  setSelectedProject('all')
+                }}
+                style={{
+                  background: '#1E293B', color: '#F8FAFC', border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: '6px', padding: '4px 10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', outline: 'none'
+                }}
+              >
+                {workspaces.length === 0 ? (
+                  <option value="agentbuilder" style={{ background: '#0F172A', color: '#F8FAFC' }}>agentbuilder</option>
+                ) : (
+                  workspaces.map(ws => (
+                    <option key={ws.slug} value={ws.slug} style={{ background: '#0F172A', color: '#F8FAFC' }}>{ws.name} ({ws.slug})</option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              background: 'rgba(15, 23, 42, 0.95)', padding: '8px 14px', borderRadius: '10px',
+              border: '1px solid rgba(6, 182, 212, 0.5)', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+            }}>
+              <Folder size={15} color="#22D3EE" />
+              <span style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 600, letterSpacing: '0.5px' }}>PROJECT:</span>
+              <select
+                id="sprint-board-project-select"
+                value={selectedProject}
+                onChange={(e) => setSelectedProject(e.target.value)}
+                style={{
+                  background: '#1E293B', color: '#F8FAFC', border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: '6px', padding: '4px 10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', outline: 'none'
+                }}
+              >
+                <option value="all" style={{ background: '#0F172A', color: '#F8FAFC' }}>⚡ All Projects (Aggregate Workspace Tasks)</option>
+                {activeProjects.map(p => (
+                  <option key={p.id} value={p.id} style={{ background: '#0F172A', color: '#F8FAFC' }}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+
             <button
-              onClick={fetchSprintTasks}
-              disabled={loading}
+              type="button"
+              onClick={() => refreshTasks(false)}
+              disabled={tasksRefreshing}
               style={{
                 background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
                 color: 'var(--text-primary)', padding: '8px 16px', borderRadius: '8px',
                 fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
               }}
             >
-              <RefreshCw size={14} className={loading ? 'spin' : ''} />
-              Refresh Plane
+              <RefreshCw size={14} className={tasksRefreshing ? 'spin' : ''} />
+              Refresh Board
             </button>
           </div>
         </div>
 
         {/* Sprint Progress Bar */}
         <div style={{ marginTop: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700, marginBottom: '6px', flexWrap: 'wrap', gap: '8px' }}>
             <span style={{ color: 'var(--text-secondary)' }}>Sprint Completion Progress</span>
-            <span style={{ color: '#34d399' }}>{sprintInfo.completion_percentage}% ({completedTasks.length}/{allTasks.length} Tasks)</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ color: '#34d399' }}>
+                {sprintInfo.completion_percentage}% ({completedTasks.length}/{(sprintInfo.open_tasks ?? allTasks.length - cancelledTasks.length)} Open Tasks Completed)
+              </span>
+              {cancelledTasks.length > 0 && (
+                <span style={{
+                  fontSize: '11px', fontWeight: 700,
+                  background: 'rgba(239,68,68,0.15)', color: '#f87171',
+                  border: '1px solid rgba(239,68,68,0.3)',
+                  padding: '2px 8px', borderRadius: '10px'
+                }}>
+                  {cancelledTasks.length} Cancelled
+                </span>
+              )}
+            </div>
           </div>
+
           <div style={{ height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden' }}>
             <div style={{
               width: `${sprintInfo.completion_percentage}%`,
@@ -166,7 +617,101 @@ export default function SprintBoard() {
         </div>
       </div>
 
-      {/* ── Search & Priority Buttons ── */}
+      {/* ── Sprint Expiry Warning Banner ── */}
+      <AnimatePresence>
+        {sprintExpiry && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            style={{
+              background: sprintExpiry === 'expired'
+                ? 'linear-gradient(135deg, rgba(239,68,68,0.18) 0%, rgba(185,28,28,0.18) 100%)'
+                : 'linear-gradient(135deg, rgba(245,158,11,0.18) 0%, rgba(180,83,9,0.18) 100%)',
+              border: sprintExpiry === 'expired'
+                ? '1px solid rgba(239,68,68,0.5)'
+                : '1px solid rgba(245,158,11,0.5)',
+              borderRadius: '12px', padding: '14px 18px', marginBottom: '16px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              flexWrap: 'wrap', gap: '12px',
+              boxShadow: sprintExpiry === 'expired'
+                ? '0 4px 20px rgba(239,68,68,0.2)'
+                : '0 4px 20px rgba(245,158,11,0.15)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <AlertTriangle size={18} color={sprintExpiry === 'expired' ? '#f87171' : '#fbbf24'} />
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 800, color: sprintExpiry === 'expired' ? '#f87171' : '#fbbf24' }}>
+                  {sprintExpiry === 'expired'
+                    ? '⚠️ SPRINT EXPIRED — Plane is auto-cancelling tasks in this cycle!'
+                    : '⏰ SPRINT ENDS TODAY — Tasks may be auto-cancelled at midnight!'}
+                </div>
+                <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '3px' }}>
+                  {sprintExpiry === 'expired'
+                    ? 'Extend the sprint end date to stop Plane from cancelling tasks. Then restore any auto-cancelled tasks back to To Do.'
+                    : 'Extend the sprint now to prevent Plane from cancelling unfinished tasks when the cycle completes tonight.'}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              {actionMsg && (
+                <span style={{
+                  fontSize: '12px', fontWeight: 600, padding: '4px 10px', borderRadius: '6px',
+                  background: actionMsg.type === 'success' ? 'rgba(52,211,153,0.15)' : actionMsg.type === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(96,165,250,0.15)',
+                  color: actionMsg.type === 'success' ? '#34d399' : actionMsg.type === 'error' ? '#f87171' : '#60a5fa',
+                  border: `1px solid ${actionMsg.type === 'success' ? 'rgba(52,211,153,0.4)' : actionMsg.type === 'error' ? 'rgba(239,68,68,0.4)' : 'rgba(96,165,250,0.4)'}`
+                }}>
+                  {actionMsg.text}
+                </span>
+              )}
+
+              {/* Restore All Cancelled Tasks */}
+              {(sprintData?.tasks?.cancelled || []).length > 0 && (
+                <button
+                  id="restore-cancelled-tasks-btn"
+                  onClick={handleRestoreAllCancelled}
+                  disabled={restoringTasks}
+                  style={{
+                    background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.5)',
+                    color: '#60a5fa', padding: '7px 14px', borderRadius: '8px',
+                    fontSize: '12px', fontWeight: 700, cursor: restoringTasks ? 'wait' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '6px', opacity: restoringTasks ? 0.7 : 1
+                  }}
+                >
+                  <RotateCcw size={13} />
+                  {restoringTasks ? 'Restoring...' : `Restore ${(sprintData?.tasks?.cancelled || []).length} Cancelled Tasks`}
+                </button>
+              )}
+
+              {/* Extend Sprint */}
+              <button
+                id="extend-sprint-btn"
+                onClick={handleExtendSprint}
+                disabled={extendingSprint}
+                style={{
+                  background: sprintExpiry === 'expired'
+                    ? 'linear-gradient(135deg, #dc2626, #b91c1c)'
+                    : 'linear-gradient(135deg, #d97706, #b45309)',
+                  border: 'none', color: '#fff',
+                  padding: '7px 16px', borderRadius: '8px',
+                  fontSize: '12px', fontWeight: 800, cursor: extendingSprint ? 'wait' : 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                  opacity: extendingSprint ? 0.7 : 1
+                }}
+              >
+                <CalendarClock size={13} />
+                {extendingSprint ? 'Extending...' : 'Extend Sprint +14 Days'}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Search & Priority Filter Controls */}
+
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         flexWrap: 'wrap', gap: '16px', marginBottom: '24px',
@@ -177,7 +722,7 @@ export default function SprintBoard() {
           <Search size={16} style={{ color: 'var(--text-secondary)' }} />
           <input
             type="text"
-            placeholder="Filter sprint tasks by title or keyword..."
+            placeholder="Search sprint tasks by name or description..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{
@@ -187,7 +732,7 @@ export default function SprintBoard() {
           />
         </div>
 
-        {/* Priority Filter Buttons */}
+        {/* Priority Filter Toggles */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           {['URGENT', 'HIGH', 'MEDIUM', 'LOW'].map(p => {
             const isEnabled = enabledPriorities[p]
@@ -195,198 +740,174 @@ export default function SprintBoard() {
             return (
               <button
                 key={p}
-                id={`priority-toggle-${p.toLowerCase()}`}
                 onClick={() => togglePriority(p)}
-                title={`Click to ${isEnabled ? 'Disable' : 'Enable'} ${p} priority tasks`}
                 style={{
                   background: isEnabled ? colors.bg : 'var(--bg-secondary)',
-                  color: isEnabled ? colors.text : 'var(--text-muted)',
-                  border: `1px solid ${isEnabled ? colors.border : 'var(--border-color)'}`,
-                  padding: '5px 12px',
-                  borderRadius: '6px',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  opacity: isEnabled ? 1 : 0.45,
-                  textDecoration: isEnabled ? 'none' : 'line-through',
-                  transition: 'all 0.2s ease'
+                  color: isEnabled ? colors.text : 'var(--text-secondary)',
+                  border: isEnabled ? `1px solid ${colors.border}` : '1px solid var(--border-color)',
+                  padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer'
                 }}
               >
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isEnabled ? colors.text : 'var(--text-muted)' }} />
-                {p} {isEnabled ? '✓' : 'OFF'}
+                {p}
               </button>
             )
           })}
         </div>
       </div>
 
-      {/* ── Kanban Columns: 3 Side-by-Side with Max Height & Scrollbar ── */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(3, 1fr)',
-        gap: '16px'
-      }}>
-        {/* Column 1: TODO / Backlog */}
-        <KanbanColumn
-          columnKey="todo"
-          title="To Do / Backlog"
-          count={todoTasks.length}
-          color="#3b82f6"
-          icon={<Clock size={16} />}
-          tasks={todoTasks}
-          priorityColors={priorityColors}
-          isCollapsed={collapsedColumns.todo}
-          onToggleCollapse={() => toggleColumnCollapse('todo')}
-        />
+      {/* ── 4-Column Multi-Project Sprint Kanban Board ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+        {/* Column 1: Backlog */}
+        <div data-testid="sprint-column-backlog" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Inbox size={16} color="#94a3b8" /> Backlog
+            </span>
+            <span style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 700 }}>
+              {filteredBacklog.length}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {filteredBacklog.length === 0 ? (
+              <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '12px', fontStyle: 'italic' }}>
+                No backlog tasks
+              </div>
+            ) : (
+              filteredBacklog.map(task => <TaskCard key={task.id} task={task} colors={priorityColors} queueInfo={queueMap[task.id]} />)
+            )}
+          </div>
+        </div>
 
-        {/* Column 2: In Progress */}
-        <KanbanColumn
-          columnKey="in_progress"
-          title="In Progress"
-          count={inProgressTasks.length}
-          color="#f59e0b"
-          icon={<PlayCircle size={16} />}
-          tasks={inProgressTasks}
-          priorityColors={priorityColors}
-          badgeText="Active Agent Working"
-          isCollapsed={collapsedColumns.in_progress}
-          onToggleCollapse={() => toggleColumnCollapse('in_progress')}
-        />
+        {/* Column 2: To Do */}
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <span style={{ fontSize: '14px', fontWeight: 700, color: '#60a5fa', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ListTodo size={16} color="#60a5fa" /> To Do (Ready)
+            </span>
+            <span style={{ background: 'rgba(96,165,250,0.2)', color: '#60a5fa', padding: '2px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 700 }}>
+              {filteredTodo.length}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {filteredTodo.length === 0 ? (
+              <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '12px', fontStyle: 'italic' }}>
+                No tasks in To Do
+              </div>
+            ) : (
+              filteredTodo.map(task => <TaskCard key={task.id} task={task} colors={priorityColors} queueInfo={queueMap[task.id]} />)
+            )}
+          </div>
+        </div>
 
-        {/* Column 3: Completed */}
-        <KanbanColumn
-          columnKey="completed"
-          title="Completed"
-          count={completedTasks.length}
-          color="#10b981"
-          icon={<CheckCircle2 size={16} />}
-          tasks={completedTasks}
-          priorityColors={priorityColors}
-          badgeText="Verified & Merged"
-          isCollapsed={collapsedColumns.completed}
-          onToggleCollapse={() => toggleColumnCollapse('completed')}
-        />
+        {/* Column 3: In Progress */}
+        <div data-testid="sprint-column-in-progress" style={{ background: 'var(--bg-card)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: '12px', padding: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <span style={{ fontSize: '14px', fontWeight: 700, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <PlayCircle size={16} color="#c4b5fd" /> In Progress (Agent Active)
+            </span>
+            <span style={{ background: 'rgba(124,58,237,0.25)', color: '#c4b5fd', padding: '2px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 700 }}>
+              {filteredInProgress.length}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {filteredInProgress.length === 0 ? (
+              <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '12px', fontStyle: 'italic' }}>
+                No active in-progress tasks
+              </div>
+            ) : (
+              filteredInProgress.map(task => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  colors={priorityColors}
+                  isProgress
+                  queueInfo={queueMap[task.id]}
+                  pipelinePhase={pipeline?.phase}
+                />
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Column 4: Completed */}
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <span style={{ fontSize: '14px', fontWeight: 700, color: '#34d399', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <FolderCheck size={16} color="#34d399" /> Completed
+            </span>
+            <span style={{ background: 'rgba(52,211,153,0.2)', color: '#34d399', padding: '2px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 700 }}>
+              {filteredCompleted.length}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {filteredCompleted.length === 0 ? (
+              <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '12px', fontStyle: 'italic' }}>
+                No completed tasks yet
+              </div>
+            ) : (
+              filteredCompleted.map(task => <TaskCard key={task.id} task={task} colors={priorityColors} isDone queueInfo={queueMap[task.id]} />)
+            )}
+          </div>
+        </div>
       </div>
     </motion.div>
   )
 }
 
-function KanbanColumn({ columnKey, title, count, color, icon, tasks, priorityColors, badgeText, isCollapsed, onToggleCollapse }) {
+function TaskCard({ task, colors, isProgress, isDone, queueInfo, pipelinePhase }) {
+  const pStyle = colors[(task.priority || 'medium').toLowerCase()] || colors.medium
+  const qStatus = queueInfo?.queue_status
+  const progress = queueInfo?.progress_pct ?? 0
+  const phaseLabel = (queueInfo?.phase || pipelinePhase || '').replace(/_/g, ' ')
+
+  const statusColors = {
+    active: { bg: 'rgba(124,58,237,0.2)', text: '#c4b5fd', label: `⚡ ${phaseLabel || 'working'}` },
+    pending: { bg: 'rgba(96,165,250,0.15)', text: '#93c5fd', label: '⏳ Queued' },
+    completed: { bg: 'rgba(16,185,129,0.15)', text: '#34d399', label: '✓ Agent done' },
+    failed: { bg: 'rgba(239,68,68,0.15)', text: '#f87171', label: '↩ Returned to To Do' },
+  }
+  const sc = qStatus === 'active' ? statusColors.active : (isDone ? statusColors.completed : statusColors[qStatus])
+
   return (
     <div style={{
-      background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-      borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px',
-      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+      background: 'var(--bg-secondary)',
+      border: isProgress || qStatus === 'active' ? '1px solid rgba(124,58,237,0.5)' : '1px solid var(--border-color)',
+      borderRadius: '8px', padding: '12px 14px', transition: 'all 0.2s ease'
     }}>
-      <div style={{
-        display: 'flex',
-        justify: 'space-between',
-        alignItems: 'center',
-        borderBottom: isCollapsed ? 'none' : '1px solid var(--border-color)',
-        paddingBottom: isCollapsed ? '0px' : '12px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ color }}>{icon}</span>
-          <h2 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
+        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', lineHeight: '1.4' }}>
+          {isDone ? '✅ ' : isProgress || qStatus === 'active' ? '⚡ ' : ''}{task.name}
         </div>
-        
-        {/* Beside the count: Crisp White 3-Line Menu Toggle Button */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            id={`column-collapse-btn-${columnKey}`}
-            onClick={onToggleCollapse}
-            title={isCollapsed ? `Click to open / expand ${title}` : `Click to close / collapse ${title}`}
-            style={{
-              background: isCollapsed ? 'rgba(124, 58, 237, 0.25)' : 'transparent',
-              border: 'none',
-              padding: '4px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <Menu size={18} color="#FFFFFF" strokeWidth={2.5} />
-          </button>
-
+        {sc && (
           <span style={{
-            background: 'var(--bg-secondary)', border: `1px solid ${color}`,
-            color, fontSize: '12px', fontWeight: 800, padding: '2px 8px', borderRadius: '12px'
+            fontSize: '9px', fontWeight: 800, padding: '3px 8px', borderRadius: '10px',
+            background: sc.bg, color: sc.text, whiteSpace: 'nowrap', flexShrink: 0,
           }}>
-            {count}
+            {sc.label}
           </span>
-        </div>
+        )}
       </div>
 
-      {!isCollapsed && (
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '10px',
-          maxHeight: '520px',
-          overflowY: 'auto',
-          paddingRight: '6px'
-        }}>
-          {tasks.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-secondary)', fontSize: '13px', fontStyle: 'italic' }}>
-              No tasks in this column
-            </div>
-          ) : (
-            tasks.map(task => {
-              const pStyle = priorityColors[task.priority?.toLowerCase()] || priorityColors.medium
-              return (
-                <motion.div
-                  key={task.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.96 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  style={{
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                    padding: '14px',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
-                    <span style={{
-                      background: pStyle.bg, color: pStyle.text, border: `1px solid ${pStyle.border}`,
-                      fontSize: '10px', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase'
-                    }}>
-                      {task.priority || 'MEDIUM'}
-                    </span>
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                      {task.points || 3} pts
-                    </span>
-                  </div>
-
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '6px' }}>
-                    {task.name}
-                  </div>
-
-                  {task.description && (
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineClamp: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {task.description}
-                    </div>
-                  )}
-
-                  {badgeText && (
-                    <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Zap size={12} style={{ color }} />
-                      <span style={{ fontSize: '11px', color, fontWeight: 700 }}>{badgeText}</span>
-                    </div>
-                  )}
-                </motion.div>
-              )
-            })
-          )}
+      {qStatus === 'active' && progress > 0 && (
+        <div style={{ marginBottom: '8px' }}>
+          <div style={{ height: '4px', background: 'rgba(255,255,255,0.08)', borderRadius: '2px', overflow: 'hidden' }}>
+            <div style={{ width: `${progress}%`, height: '100%', background: '#7c3aed', transition: 'width 0.3s' }} />
+          </div>
+          <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px', textAlign: 'right' }}>{progress}%</div>
         </div>
       )}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px', flexWrap: 'wrap', gap: '6px' }}>
+        <span style={{ fontSize: '10px', color: '#93c5fd', fontWeight: 700, background: 'rgba(147,197,253,0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+          🏷️ {task.project_name || 'Project'}
+        </span>
+        <span style={{
+          fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '4px',
+          background: pStyle.bg, color: pStyle.text, border: `1px solid ${pStyle.border}`
+        }}>
+          {(task.priority || 'MEDIUM').toUpperCase()}
+        </span>
+      </div>
     </div>
   )
 }

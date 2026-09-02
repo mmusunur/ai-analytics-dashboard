@@ -1,65 +1,65 @@
-import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import axios from 'axios'
-import { 
-  LayoutDashboard, BarChart3, LineChart, Bot, 
-  GitBranch, Database, Settings, ChevronRight, Activity, Menu, EyeOff, X
+import {
+  LayoutDashboard, BarChart3, LineChart, Bot,
+  Database, ChevronRight, Menu, EyeOff, Kanban, Plug
 } from 'lucide-react'
+import { useAgentStatus } from '../hooks/useAgentStatus'
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard, section: 'MAIN' },
   { path: '/analytics', label: 'Analytics', icon: BarChart3, section: 'MAIN' },
   { path: '/charts', label: 'Charts Explorer', icon: LineChart, section: 'MAIN' },
   { path: '/data', label: 'Data Manager', icon: Database, section: 'DATA' },
+  { path: '/sprints', label: 'Sprint Board', icon: Kanban, section: 'AGENTS' },
   { path: '/agents', label: 'Agent Monitor', icon: Bot, section: 'AGENTS' },
-  { path: '/sprints', label: 'Sprint Board', icon: GitBranch, section: 'AGENTS' },
+  { path: '/mcp', label: 'MCP Explorer', icon: Plug, section: 'AGENTS' },
 ]
+
+const AGENT_LABELS = {
+  orchestrator: 'Orchestrator',
+  builder: 'Builder',
+  tester: 'Tester',
+  git: 'Git Agent',
+  git_agent: 'Git Agent',
+  sprint_watcher: 'Sprint Watcher',
+  memory: 'Memory',
+}
+
+const DEFAULT_AGENTS = [
+  'sprint_watcher', 'builder', 'tester', 'git_agent', 'memory', 'orchestrator',
+].map((key) => [key, { status: 'idle', current_task: 'Loading…' }])
+
+const API = import.meta.env.VITE_API_URL || ''
 
 export default function Sidebar({ collapsed, onToggle, onHide }) {
   const location = useLocation()
-  const [agentsData, setAgentsData] = useState({
-    orchestrator: { status: 'running', current_task: 'Task & Agent State Coordination Active' },
-    builder: { status: 'running', current_task: 'Autonomous Builder Agent Active' },
-    tester: { status: 'running', current_task: 'Automated Pytest & Playwright Suite Active' },
-    git: { status: 'running', current_task: 'Continuous EOD Auto-Push Active' },
-    sprint_watcher: { status: 'running', current_task: 'Watching sprint (60s Polling Loop Active)' }
-  })
-
-  useEffect(() => {
-    const fetchStatus = () => {
-      axios.get('/api/agents/status')
-        .then(res => {
-          if (res.data?.agents) {
-            const raw = res.data.agents
-            setAgentsData({
-              orchestrator: raw.orchestrator || { status: 'running', current_task: 'Task & Agent State Coordination Active' },
-              builder: raw.builder || { status: 'running', current_task: 'Autonomous Builder Agent Active' },
-              tester: raw.tester || { status: 'running', current_task: 'Automated Pytest & Playwright Suite Active' },
-              git: raw.git_agent || raw.git || { status: 'running', current_task: 'Continuous EOD Auto-Push Active' },
-              sprint_watcher: raw.sprint_watcher || { status: 'running', current_task: 'Watching sprint (60s Polling Loop Active)' }
-            })
-          }
-        })
-        .catch(() => {})
-    }
-    fetchStatus()
-    const timer = setInterval(fetchStatus, 4000)
-    return () => clearInterval(timer)
-  }, [])
+  const { agentsData, pipeline, isLoading, error } = useAgentStatus()
 
   const sections = [...new Set(navItems.map(n => n.section))]
+
+  const isAgentRunning = (name, info) => {
+    const task = (info?.current_task || '').toLowerCase()
+    const status = (info?.status || '').toLowerCase()
+    return status === 'running' || task.includes('building') || task.includes('test') ||
+      task.includes('active task') || task.includes('picked') || task.includes('implementing')
+  }
+
+  const pipelineActive = pipeline.phase && !['idle', 'done'].includes(pipeline.phase)
+
+  const agentEntries = Object.keys(agentsData).length > 0
+    ? Object.entries(agentsData)
+    : DEFAULT_AGENTS
 
   return (
     <aside
       className={`sidebar ${collapsed ? 'collapsed' : ''}`}
       style={{
-        width: collapsed ? '72px' : '260px',
-        minWidth: collapsed ? '72px' : '260px',
+        width: collapsed ? '72px' : '272px',
+        minWidth: collapsed ? '72px' : '272px',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         overflowX: 'hidden'
       }}
     >
-      {/* Logo, Three-Line Toggle, & Hide Component Header */}
       <div
         className="sidebar-logo"
         style={{
@@ -75,7 +75,7 @@ export default function Sidebar({ collapsed, onToggle, onHide }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div
             className="logo-icon"
-            title="AI Analytics · Agentic Dashboard"
+            title="AgenticOps AI"
             style={{
               width: collapsed ? '30px' : '40px',
               height: collapsed ? '30px' : '40px',
@@ -91,57 +91,37 @@ export default function Sidebar({ collapsed, onToggle, onHide }) {
           </div>
           {!collapsed && (
             <div>
-              <div className="logo-text">AI Analytics</div>
-              <div className="logo-subtitle">Agentic Dashboard</div>
+              <div className="logo-text">AgenticOps AI</div>
+              <div className="logo-subtitle">Autonomous Dashboard</div>
             </div>
           )}
         </div>
 
-        {/* Action Buttons: Toggle (Collapse/Expand) & Hide Entire Component */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          {/* Three Line Toggle Button */}
           <button
             id="sidebar-toggle-btn"
             onClick={onToggle}
-            title={collapsed ? "Enable Nav Bar (AI Analytics)" : "Disable Nav Bar"}
-            aria-label={collapsed ? "Enable Nav Bar" : "Disable Nav Bar"}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#FFFFFF',
-              padding: '6px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: collapsed ? '30px' : '36px',
-              height: collapsed ? '30px' : '36px',
-              transition: 'all 0.2s ease'
+              background: 'transparent', border: 'none', color: '#FFFFFF',
+              padding: '6px', borderRadius: '6px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: collapsed ? '30px' : '36px', height: collapsed ? '30px' : '36px',
             }}
           >
             <Menu size={22} color="#FFFFFF" strokeWidth={2.5} />
           </button>
-
-          {/* Hide Left Nav Bar Component Button */}
           {onHide && !collapsed && (
             <button
               id="sidebar-hide-btn"
               onClick={onHide}
-              title="Hide Left Side Nav Bar"
-              aria-label="Hide Left Side Nav Bar"
+              title="Hide sidebar"
               style={{
-                background: 'rgba(239, 68, 68, 0.12)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                color: '#ef4444',
-                padding: '6px',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '40px',
-                width: '32px'
+                background: 'rgba(148, 163, 184, 0.12)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-secondary)', padding: '6px', borderRadius: '6px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                height: '40px', width: '32px'
               }}
             >
               <EyeOff size={16} />
@@ -150,7 +130,6 @@ export default function Sidebar({ collapsed, onToggle, onHide }) {
         </div>
       </div>
 
-      {/* Navigation Links */}
       <nav className="sidebar-nav">
         {sections.map(section => (
           <div key={section}>
@@ -181,41 +160,61 @@ export default function Sidebar({ collapsed, onToggle, onHide }) {
         ))}
       </nav>
 
-      {/* Agent Status Footer with Live Current Task Visibility */}
       {!collapsed && (
-        <div style={{ 
-          padding: '14px 8px', 
+        <div className="sidebar-agent-panel" style={{
+          padding: '14px 8px',
           borderTop: '1px solid var(--border-subtle)',
-          marginTop: 'auto'
         }}>
           <div className="nav-section-label" style={{ paddingTop: 0, marginBottom: '6px' }}>AGENT STATUS</div>
-          {Object.entries(agentsData).map(([name, info]) => {
-            const status = info.status || 'running';
-            const taskDesc = info.current_task || 'Active';
-            const isWorking = taskDesc.includes('🔨') || taskDesc.includes('🧪') || taskDesc.includes('Picked up') || taskDesc.includes('Building') || taskDesc.includes('Implementing');
+
+          {error && (
+            <div style={{ fontSize: '10px', color: '#fbbf24', marginBottom: '6px' }}>
+              Backend unreachable — showing last known / default agents
+            </div>
+          )}
+
+          {pipelineActive && pipeline.task_title && (
+            <div style={{
+              padding: '8px', borderRadius: '8px', marginBottom: '8px',
+              background: 'rgba(124, 58, 237, 0.15)',
+              border: '1px solid rgba(124, 58, 237, 0.35)',
+              fontSize: '11px',
+            }}>
+              <div style={{ fontWeight: 800, color: '#a78bfa', marginBottom: '4px' }}>ACTIVE SPRINT TASK</div>
+              <div style={{ color: '#e2e8f0', fontWeight: 600, lineHeight: 1.3 }}>{pipeline.task_title}</div>
+              <div style={{ color: '#94a3b8', marginTop: '4px' }}>
+                Phase: <strong style={{ color: '#c4b5fd' }}>{pipeline.phase}</strong>
+                {pipeline.active_agent && <> · {pipeline.active_agent}</>}
+              </div>
+            </div>
+          )}
+
+          {agentEntries.map(([name, info]) => {
+            const working = isAgentRunning(name, info) || (pipeline.active_agent === name && pipelineActive)
+            const label = AGENT_LABELS[name] || name.replace('_', ' ')
+            const taskDesc = info?.current_task || 'Idle'
 
             return (
-              <div key={name} title={taskDesc} style={{ 
+              <div key={name} title={taskDesc} style={{
                 padding: '5px 8px', borderRadius: '6px', marginBottom: '4px',
-                background: isWorking ? 'rgba(124, 58, 237, 0.12)' : 'transparent',
-                border: isWorking ? '1px solid rgba(124, 58, 237, 0.3)' : '1px solid transparent',
-                transition: 'all 0.2s ease'
+                background: working ? 'rgba(124, 58, 237, 0.12)' : 'transparent',
+                border: working ? '1px solid rgba(124, 58, 237, 0.3)' : '1px solid transparent',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  <span className={`status-dot ${status}`} />
-                  <span style={{ textTransform: 'capitalize', fontWeight: 600, color: 'var(--text-primary)' }}>{name.replace('_', ' ')}</span>
-                  <span style={{ marginLeft: 'auto', fontSize: '10px', color: isWorking ? '#a78bfa' : 'var(--text-muted)', fontWeight: isWorking ? 700 : 400 }}>
-                    {isWorking ? 'WORKING ⚡' : status}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                  <span className={`status-dot ${working ? 'running' : (info?.status || 'idle')}`} />
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{label}</span>
+                  <span style={{
+                    marginLeft: 'auto', fontSize: '10px',
+                    color: working ? '#a78bfa' : 'var(--text-muted)',
+                    fontWeight: working ? 700 : 400
+                  }}>
+                    {working ? 'WORKING' : (info?.status || 'idle')}
                   </span>
                 </div>
                 <div style={{
-                  fontSize: '10px',
-                  color: isWorking ? '#c4b5fd' : 'var(--text-muted)',
-                  marginTop: '2px',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  paddingLeft: '14px'
+                  fontSize: '10px', color: working ? '#c4b5fd' : 'var(--text-muted)',
+                  marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden',
+                  textOverflow: 'ellipsis', paddingLeft: '14px'
                 }}>
                   {taskDesc}
                 </div>

@@ -6,7 +6,7 @@ export default function Footer() {
     <footer id="app-footer" style={{
       padding: '20px 32px',
       borderTop: '1px solid var(--border-color, rgba(255,255,255,0.08))',
-      background: 'var(--bg-card, #111827)',
+      background: 'var(--bg-card)',
       marginTop: 'auto',
       display: 'flex',
       justify: 'space-between',
@@ -14,7 +14,7 @@ export default function Footer() {
       flexWrap: 'wrap',
       gap: '12px',
       fontSize: '12px',
-      color: 'var(--text-secondary, #9ca3af)'
+      color: 'var(--text-secondary)'
     }}>
       <div>
         © {currentYear} <strong>AI Analytics Dashboard</strong>. All rights reserved.

@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import { Upload, Play, CheckCircle, AlertCircle, Brain } from 'lucide-react'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API = import.meta.env.VITE_API_URL || ''
 const COLORS = ['#7C3AED', '#06B6D4', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6']
 
 export default function Analytics() {
@@ -77,7 +77,7 @@ export default function Analytics() {
               onDragLeave={() => setDragging(false)}
               onDrop={e => { e.preventDefault(); setDragging(false); handleUpload(e.dataTransfer.files[0]) }}
             >
-              <input id="csv-input" type="file" accept=".csv" hidden
+              <input id="csv-input" type="file" accept=".csv,.xlsx,.xls" hidden
                 onChange={e => handleUpload(e.target.files[0])} />
               {uploading ? (
                 <div className="spinner" style={{ margin: '0 auto' }} />

@@ -8,6 +8,8 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 
+from agent_config_loader import get_agent_model, get_agent_max_tokens
+
 console = Console(legacy_windows=False)
 
 
@@ -57,8 +59,8 @@ Return ONLY the complete modified file content (no markdown fences, no explanati
 If no changes needed, return exactly: UNCHANGED"""
 
         resp = client.messages.create(
-            model="claude-opus-4-5",
-            max_tokens=4096,
+            model=get_agent_model("builder"),
+            max_tokens=min(get_agent_max_tokens("builder"), 4096),
             messages=[{"role": "user", "content": prompt}]
         )
         result = resp.content[0].text.strip()
@@ -87,6 +89,15 @@ def apply_intent_fixes(root_dir: Path, codebase_map: dict, task_title: str, desc
         "CHARTS_AND_VISUALIZATION_ALIGNMENT":  ["charts_py", "dashboard"],
         "NAVBAR_AND_SIDEBAR_NAVIGATION":       ["navbar", "dashboard"],
         "MULTI_TARGET_DATABASE_ARCHITECTURE":  ["warehouse_svc", "analytics_py"],
+        "SPRINT_AGENT_FIX":                    ["dashboard"],
+        "SPRINT_BOARD_STYLING_AND_DROPDOWNS":  ["dashboard"],
+        "UI_PERFORMANCE_AND_REFRESH":          ["dashboard"],
+        "ROUTE_AND_NAVIGATION_FIX":            ["navbar", "dashboard"],
+        "BACKEND_QUERY_FIX":                   ["warehouse_svc", "analytics_py"],
+        "API_ENDPOINT_FIX":                    ["analytics_py", "charts_py"],
+        "HIDE_UI_CONTENT":                     ["dashboard", "navbar"],
+        "REMOVE_UNWANTED_CONTENT":             ["dashboard", "navbar"],
+        "TEST_COVERAGE_AND_EXCEL":             ["dashboard"],
     }
 
     files_to_patch = []

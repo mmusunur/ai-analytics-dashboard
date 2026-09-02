@@ -17,10 +17,10 @@ The application system provides mandatory platform-specific execution launcher s
 The agent network executes the complete 6-stage task workflow autonomously:
 
 ```
-┌─────────────────────────┐      ┌─────────────────────────┐      ┌─────────────────────────┐
-│ 1. Sprint Task Pickup   │ ───► │ 2. Title & NLP Parsing  │ ───► │ 3. Real Code Building   │
-│ (sprint_watcher_agent)  │      │ (builder_agent classifier)     │ (React & FastAPI edit)  │
-└─────────────────────────┘      └─────────────────────────┘      └─────────────────────────┘
+┌──────────────────────────────────────┐      ┌─────────────────────────┐      ┌─────────────────────────┐
+│ 1. Multi-Workspace & Project Pickup  │ ───► │ 2. Title & NLP Parsing  │ ───► │ 3. Real Code Building   │
+│ (sprint_watcher_agent scanner)       │      │ (builder_agent classifier)     │ (React & FastAPI edit)  │
+└──────────────────────────────────────┘      └─────────────────────────┘      └─────────────────────────┘
              │                                                                 │
              ▼                                                                 ▼
 ┌─────────────────────────┐      ┌─────────────────────────┐      ┌─────────────────────────┐
@@ -31,7 +31,11 @@ The agent network executes the complete 6-stage task workflow autonomously:
 
 ### Stage 1: Sprint Task Pickup
 - **Files:** [`agents/sprint_watcher_agent.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/agents/sprint_watcher_agent.py), [`backend/routers/sprints.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/backend/routers/sprints.py)
-- **Behavior:** Polls Plane REST API every 15s or triggers via non-blocking background thread whenever `/api/sprints/tasks` is called. Detects tasks in `ACTIONABLE_STATES` (`unstarted`, `todo`, `started`, `in_progress`).
+- **Behavior:** Polls Plane REST API every 15–60s or triggers via non-blocking background thread whenever `/api/sprints/tasks` is called. Detects tasks in `AGENT_PICKUP_GROUPS` (`unstarted`, `todo`, `triaged`). Stale `in_progress` tasks may be retried. **`backlog` is excluded** from automatic agent pickup.
+
+### Stage 0: Application Must Be Running (Mandatory Pre-Condition)
+- **Scripts:** [`scripts/server_health.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/scripts/server_health.py), [`scripts/agent_watchdog.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/scripts/agent_watchdog.py), [`scripts/start_all_services.bat`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/scripts/start_all_services.bat)
+- **Rule:** Agents MUST start and keep FastAPI (`:8000`) and Vite (`:5173`) running before browser tests or sprint closure. Use `ensure_servers_running()` or the 1-click launchers. The watchdog auto-restarts crashed servers and the sprint watcher.
 
 ### Stage 2: Task Comprehension & Intent Classification
 - **File:** [`agents/builder_agent.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/agents/builder_agent.py)
@@ -43,7 +47,7 @@ The agent network executes the complete 6-stage task workflow autonomously:
 
 ### Stage 4: Automated Testing & Playwright Verification
 - **Files:** [`agents/tester_agent.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/agents/tester_agent.py), [`tests/unit/`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tests/unit/), [`tests/browser/`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tests/browser/)
-- **Behavior:** Executes 51 pytest unit tests (`pytest tests/unit/`) and 14 Playwright browser E2E tests (`pytest tests/browser/`) to verify quality gates.
+- **Behavior:** Executes **65** pytest unit tests (`pytest tests/unit/`) and **39** Playwright browser E2E tests (`pytest tests/browser/`). Browser tests auto-start servers via [`scripts/server_health.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/scripts/server_health.py) if `:8000` or `:5173` are down.
 
 ### Stage 5: Closing Sprint Task on Plane
 - **Files:** [`agents/sprint_watcher_agent.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/agents/sprint_watcher_agent.py), [`agents/plane_agent.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/agents/plane_agent.py)
@@ -68,13 +72,27 @@ The agent network executes the complete 6-stage task workflow autonomously:
 
 ---
 
-## 5. Automatic README.md Maintenance Mandate
-- **Mandatory Documentation Directive:**
-  - The AI AGENT MUST automatically maintain and update [`README.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/README.md) whenever new features, backend API endpoints, multi-database architecture parameters, or agent processes are added or updated.
+## 📝 5. Automatic README.md Maintenance & Per-Turn Conversation Memory Directives
+- **Automatic README Updates:** Whenever new features, components, or services are added, automatically update [`README.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/README.md).
+- **Automatic Documentation Sync:** On major changes, also update [`docs/AGENT_PIPELINE_USER_GUIDE.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/docs/AGENT_PIPELINE_USER_GUIDE.md), [`docs/doc_content.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/docs/doc_content.py), relevant [`tasks/*.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/), and regenerate [`docs/AgenticOps_AI_Overview.pptx`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/docs/AgenticOps_AI_Overview.pptx) + [`docs/AgenticOps_AI_Documentation.docx`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/docs/AgenticOps_AI_Documentation.docx) via `python docs/sync_all_documentation.py`. See [`tasks/task_33_automatic_documentation_updates.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/tasks/task_33_automatic_documentation_updates.md).
+- **Doc Sync Check:** Run `python scripts/sync_documentation.py` to detect stale documentation.
+- **Per-Turn Memory Logging:** Update `memory/conversations/assistant_conversation.jsonl`, `memory/task_history/YYYY-MM-DD_task_history.jsonl`, and `memory/agent_state.json` on every user interaction turn.
 
 ---
 
-## 🧠 6. Mandatory Per-Turn Conversation Memory Update Directive
+## 🤖 6. Mandatory README Agent LLM Model Allocation Table Preservation Rule
+- **Strict Preservation Mandate:** Whenever modifying or updating [`README.md`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/README.md), **DO NOT remove, delete, or modify** the `## 🤖 Autonomous Agent Fleet & LLM Model Allocation` table.
+- The table must permanently preserve the assigned model for each agent:
+  - **Orchestrator Agent**: `Claude 3.5 Opus` (`claude-opus-4-5`)
+  - **Builder Agent**: `Claude 3.5 Opus` (`claude-opus-4-5`)
+  - **Tester Agent**: `Claude 3.5 Sonnet` (`claude-sonnet-4-5`)
+  - **Sprint Watcher**: `Claude 3.5 Haiku` (`claude-haiku-4-5`)
+  - **Git Agent**: `Claude 3.5 Haiku` (`claude-haiku-4-5`)
+  - **Plane Agent**: `Claude 3.5 Haiku` (`claude-haiku-4-5`)
+
+---
+
+## 🧠 7. Mandatory Per-Turn Conversation Memory Update Directive
 - **Mandatory Memory Sync Rule:**
   - On every user conversation exchange, the agent MUST automatically invoke `update_conversation_memory()` in [`agents/memory_manager.py`](file:///c:/Users/manik/Downloads/c&s/mani_personal/ai_analytics_dashboard/agents/memory_manager.py).
   - Appends query and response summaries to `memory/conversations/assistant_conversation.jsonl`, updates daily task logs in `memory/task_history/YYYY-MM-DD_task_history.jsonl`, and updates `memory/agent_state.json`.
