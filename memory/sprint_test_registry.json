@@ -5,7 +5,7 @@
       "task_title": "Remove Unwanted Content",
       "description": "Hide Copilot Search Fixes and Agent Monitor from dashboard",
       "project_name": "AI Analytics Dashboard",
-      "registered_at": "2026-09-02T20:00:59.177887",
+      "registered_at": "2026-09-02T21:16:59.311456",
       "cases": [
         {
           "case_id": "TC-TASK-TEST-TAS-SMOKE",
@@ -163,7 +163,7 @@
       "task_title": "Sprint Board Navigation",
       "description": "Verify kanban columns",
       "project_name": "",
-      "registered_at": "2026-09-02T20:00:59.213746",
+      "registered_at": "2026-09-02T21:16:59.325199",
       "cases": [
         {
           "case_id": "TC-TASK-TEST-TAS-SMOKE",
@@ -321,7 +321,7 @@
       "task_title": "Sprint Board Browser Navigation",
       "description": "Workspace dropdown and kanban",
       "project_name": "",
-      "registered_at": "2026-09-02T20:00:59.239331",
+      "registered_at": "2026-09-02T21:16:59.344664",
       "cases": [
         {
           "case_id": "TC-TASK-TEST-TAS-SMOKE",
@@ -478,14 +478,14 @@
       "task_id": "7945706c-04cf-4987-a510-cb92272a71dc",
       "task_title": "Train the uploaded the csv file and show the analytics",
       "description": "Train the uploaded the csv file and show the analytics",
-      "project_name": "AgenticOps AI -  Enterprise Control Plane",
-      "registered_at": "2026-09-02T20:00:56.227056",
+      "project_name": "",
+      "registered_at": "2026-09-02T20:15:53.647680",
       "cases": [
         {
           "case_id": "TC-TASK-7945706C-SMOKE",
           "task_id": "7945706c-04cf-4987-a510-cb92272a71dc",
           "task_title": "Train the uploaded the csv file and show the analytics",
-          "project_name": "AgenticOps AI -  Enterprise Control Plane",
+          "project_name": "",
           "name": "Dashboard smoke after sprint task: Train the uploaded the csv file and show the analytics",
           "functionality": "Sprint Task Regression Smoke Test",
           "expected": "After implementing the sprint task 'Train the uploaded the csv file and show the analytics', the main dashboard loads with KPI cards and global header controls working.",
@@ -504,7 +504,7 @@
           "case_id": "TC-TASK-7945706C-COPILOT",
           "task_id": "7945706c-04cf-4987-a510-cb92272a71dc",
           "task_title": "Train the uploaded the csv file and show the analytics",
-          "project_name": "AgenticOps AI -  Enterprise Control Plane",
+          "project_name": "",
           "name": "AI Data Copilot accepts prompts and shows results",
           "functionality": "AI Data Copilot Sprint Task Verification",
           "expected": "The AI Data Copilot search box and Ask AI control are visible and a quick insight pill triggers an analysis result card.",
@@ -529,7 +529,7 @@
           "case_id": "TC-TASK-7945706C-TABLE",
           "task_id": "7945706c-04cf-4987-a510-cb92272a71dc",
           "task_title": "Train the uploaded the csv file and show the analytics",
-          "project_name": "AgenticOps AI -  Enterprise Control Plane",
+          "project_name": "",
           "name": "Warehouse sales table loads with data rows",
           "functionality": "Warehouse Analytics Table Verification",
           "expected": "Selecting the development database and submitting loads the warehouse item table with visible rows.",
@@ -556,7 +556,7 @@
           "case_id": "TC-TASK-7945706C-HEADER",
           "task_id": "7945706c-04cf-4987-a510-cb92272a71dc",
           "task_title": "Train the uploaded the csv file and show the analytics",
-          "project_name": "AgenticOps AI -  Enterprise Control Plane",
+          "project_name": "",
           "name": "Global header controls and clear filter work",
           "functionality": "Header Controls Sprint Task Verification",
           "expected": "Global date picker, database selector, submit button, and clear filter control are visible on the dashboard.",
@@ -580,7 +580,7 @@
           "case_id": "TC-TASK-7945706C-AGENTS",
           "task_id": "7945706c-04cf-4987-a510-cb92272a71dc",
           "task_title": "Train the uploaded the csv file and show the analytics",
-          "project_name": "AgenticOps AI -  Enterprise Control Plane",
+          "project_name": "",
           "name": "Agent status telemetry visible in sidebar",
           "functionality": "Agent Fleet Monitoring Verification",
           "expected": "The dashboard sidebar shows agent status information for the autonomous agent fleet.",
@@ -597,7 +597,7 @@
           "case_id": "TC-TASK-7945706C-UPTIME",
           "task_id": "7945706c-04cf-4987-a510-cb92272a71dc",
           "task_title": "Train the uploaded the csv file and show the analytics",
-          "project_name": "AgenticOps AI -  Enterprise Control Plane",
+          "project_name": "",
           "name": "Application servers respond for browser testing",
           "functionality": "Application Uptime Verification",
           "expected": "The dashboard and sprint board pages load in the browser confirming frontend and backend services are running.",
@@ -610,6 +610,268 @@
           "actions": []
         }
       ]
+    },
+    "cfaf3d1d-c606-4c5e-bb8e-d060c26b8f86": {
+      "task_id": "cfaf3d1d-c606-4c5e-bb8e-d060c26b8f86",
+      "task_title": "Train the uploaded the csv file and show the analytics",
+      "description": "Train the uploaded the csv file and show the analytics",
+      "project_name": "",
+      "registered_at": "2026-09-02T20:43:14.172704",
+      "cases": [
+        {
+          "case_id": "TC-TASK-CFAF3D1D-SMOKE",
+          "task_id": "cfaf3d1d-c606-4c5e-bb8e-d060c26b8f86",
+          "task_title": "Train the uploaded the csv file and show the analytics",
+          "project_name": "",
+          "name": "Dashboard smoke after sprint task: Train the uploaded the csv file and show the analytics",
+          "functionality": "Sprint Task Regression Smoke Test",
+          "expected": "After implementing the sprint task 'Train the uploaded the csv file and show the analytics', the main dashboard loads with KPI cards and global header controls working.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            ".kpi-card",
+            "#global-date-picker",
+            "#global-db-selector",
+            "#submit-db-btn"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-CFAF3D1D-COPILOT",
+          "task_id": "cfaf3d1d-c606-4c5e-bb8e-d060c26b8f86",
+          "task_title": "Train the uploaded the csv file and show the analytics",
+          "project_name": "",
+          "name": "AI Data Copilot accepts prompts and shows results",
+          "functionality": "AI Data Copilot Sprint Task Verification",
+          "expected": "The AI Data Copilot search box and Ask AI control are visible and a quick insight pill triggers an analysis result card.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "#copilot-input",
+            "button:has-text('Ask AI')",
+            "text=Quick Insights:"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [
+            "AI Copilot Finding"
+          ],
+          "actions": [
+            {
+              "type": "click",
+              "selector": "button:has-text('High Scratch Quantity')"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-CFAF3D1D-TABLE",
+          "task_id": "cfaf3d1d-c606-4c5e-bb8e-d060c26b8f86",
+          "task_title": "Train the uploaded the csv file and show the analytics",
+          "project_name": "",
+          "name": "Warehouse sales table loads with data rows",
+          "functionality": "Warehouse Analytics Table Verification",
+          "expected": "Selecting the development database and submitting loads the warehouse item table with visible rows.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "table",
+            "#warehouse-analytics-table"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": [
+            {
+              "type": "select",
+              "selector": "#global-db-selector",
+              "value": "pg_dev"
+            },
+            {
+              "type": "click",
+              "selector": "#submit-db-btn"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-CFAF3D1D-HEADER",
+          "task_id": "cfaf3d1d-c606-4c5e-bb8e-d060c26b8f86",
+          "task_title": "Train the uploaded the csv file and show the analytics",
+          "project_name": "",
+          "name": "Global header controls and clear filter work",
+          "functionality": "Header Controls Sprint Task Verification",
+          "expected": "Global date picker, database selector, submit button, and clear filter control are visible on the dashboard.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "#global-date-picker",
+            "#global-db-selector",
+            "#submit-db-btn",
+            "#header-clear-filter-btn"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": [
+            {
+              "type": "click",
+              "selector": "button:has-text('High Scratch Quantity')"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-CFAF3D1D-AGENTS",
+          "task_id": "cfaf3d1d-c606-4c5e-bb8e-d060c26b8f86",
+          "task_title": "Train the uploaded the csv file and show the analytics",
+          "project_name": "",
+          "name": "Agent status telemetry visible in sidebar",
+          "functionality": "Agent Fleet Monitoring Verification",
+          "expected": "The dashboard sidebar shows agent status information for the autonomous agent fleet.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            ".sidebar",
+            "text=AGENT STATUS"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-CFAF3D1D-UPTIME",
+          "task_id": "cfaf3d1d-c606-4c5e-bb8e-d060c26b8f86",
+          "task_title": "Train the uploaded the csv file and show the analytics",
+          "project_name": "",
+          "name": "Application servers respond for browser testing",
+          "functionality": "Application Uptime Verification",
+          "expected": "The dashboard and sprint board pages load in the browser confirming frontend and backend services are running.",
+          "url": "http://localhost:5173/sprints",
+          "must_be_visible": [
+            "select#sprint-board-workspace-select"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        }
+      ]
+    },
+    "1bbbdf8a-fc8e-46d3-962f-a6f1062a5581": {
+      "task_id": "1bbbdf8a-fc8e-46d3-962f-a6f1062a5581",
+      "task_title": "Training the csv data",
+      "description": "Training the csv data",
+      "project_name": "AgenticOps AI -  Enterprise Control Plane",
+      "registered_at": "2026-09-02T20:52:31.358848",
+      "cases": [
+        {
+          "case_id": "TC-TASK-1BBBDF8A-SMOKE",
+          "task_id": "1bbbdf8a-fc8e-46d3-962f-a6f1062a5581",
+          "task_title": "Training the csv data",
+          "project_name": "AgenticOps AI -  Enterprise Control Plane",
+          "name": "Dashboard smoke after sprint task: Training the csv data",
+          "functionality": "Sprint Task Regression Smoke Test",
+          "expected": "After implementing the sprint task 'Training the csv data', the main dashboard loads with KPI cards and global header controls working.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            ".kpi-card",
+            "#global-date-picker",
+            "#global-db-selector",
+            "#submit-db-btn"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-1BBBDF8A-SPRINT-UI",
+          "task_id": "1bbbdf8a-fc8e-46d3-962f-a6f1062a5581",
+          "task_title": "Training the csv data",
+          "project_name": "AgenticOps AI -  Enterprise Control Plane",
+          "name": "Sprint board page loads with workspace and project selectors",
+          "functionality": "Sprint Board Browser Verification",
+          "expected": "The Sprint Board page displays workspace and project dropdowns and kanban column headers.",
+          "url": "http://localhost:5173/sprints",
+          "must_be_visible": [
+            "select#sprint-board-workspace-select",
+            "select#sprint-board-project-select",
+            "h1"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [
+            "Backlog",
+            "To Do"
+          ],
+          "actions": []
+        },
+        {
+          "case_id": "TC-TASK-1BBBDF8A-COPILOT",
+          "task_id": "1bbbdf8a-fc8e-46d3-962f-a6f1062a5581",
+          "task_title": "Training the csv data",
+          "project_name": "AgenticOps AI -  Enterprise Control Plane",
+          "name": "AI Data Copilot accepts prompts and shows results",
+          "functionality": "AI Data Copilot Sprint Task Verification",
+          "expected": "The AI Data Copilot search box and Ask AI control are visible and a quick insight pill triggers an analysis result card.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "#copilot-input",
+            "button:has-text('Ask AI')",
+            "text=Quick Insights:"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [
+            "AI Copilot Finding"
+          ],
+          "actions": [
+            {
+              "type": "click",
+              "selector": "button:has-text('High Scratch Quantity')"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-1BBBDF8A-TABLE",
+          "task_id": "1bbbdf8a-fc8e-46d3-962f-a6f1062a5581",
+          "task_title": "Training the csv data",
+          "project_name": "AgenticOps AI -  Enterprise Control Plane",
+          "name": "Warehouse sales table loads with data rows",
+          "functionality": "Warehouse Analytics Table Verification",
+          "expected": "Selecting the development database and submitting loads the warehouse item table with visible rows.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "table",
+            "#warehouse-analytics-table"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": [
+            {
+              "type": "select",
+              "selector": "#global-db-selector",
+              "value": "pg_dev"
+            },
+            {
+              "type": "click",
+              "selector": "#submit-db-btn"
+            }
+          ]
+        },
+        {
+          "case_id": "TC-TASK-1BBBDF8A-HEADER",
+          "task_id": "1bbbdf8a-fc8e-46d3-962f-a6f1062a5581",
+          "task_title": "Training the csv data",
+          "project_name": "AgenticOps AI -  Enterprise Control Plane",
+          "name": "Global header controls and clear filter work",
+          "functionality": "Header Controls Sprint Task Verification",
+          "expected": "Global date picker, database selector, submit button, and clear filter control are visible on the dashboard.",
+          "url": "http://localhost:5173",
+          "must_be_visible": [
+            "#global-date-picker",
+            "#global-db-selector",
+            "#submit-db-btn",
+            "#header-clear-filter-btn"
+          ],
+          "must_be_hidden_text": [],
+          "must_contain_text": [],
+          "actions": [
+            {
+              "type": "click",
+              "selector": "button:has-text('High Scratch Quantity')"
+            }
+          ]
+        }
+      ]
     }
   },
   "active_task_id": "test-task-sprint-003",
@@ -617,6 +879,8 @@
     "test-task-sprint-003",
     "test-task-excel-002",
     "test-task-id-001",
+    "1bbbdf8a-fc8e-46d3-962f-a6f1062a5581",
+    "cfaf3d1d-c606-4c5e-bb8e-d060c26b8f86",
     "7945706c-04cf-4987-a510-cb92272a71dc"
   ]
 }
