@@ -324,8 +324,15 @@ def commit(message: str) -> bool:
 
 
 def push(branch: str = "main", force: bool = False) -> bool:
-    """Push commits to remote origin."""
-    cmd = ["push", "-u", "origin", branch]
+    """Push commits to remote origin with automatic token authentication."""
+    token = os.getenv("GITHUB_TOKEN", "")
+    repo = os.getenv("GITHUB_REPO", "")
+    if token and repo:
+        user = "x-access-token" if token.startswith("github_pat_") else token
+        url = f"https://{user}:{token}@github.com/{repo}.git" if token.startswith("github_pat_") else f"https://{token}@github.com/{repo}.git"
+        _run_git(["remote", "set-url", "origin", url])
+
+    cmd = ["-c", "credential.helper=", "push", "-u", "origin", branch]
     if force:
         cmd.append("--force")
 
@@ -335,7 +342,7 @@ def push(branch: str = "main", force: bool = False) -> bool:
         return True
     else:
         console.print(f"[red]❌ Push failed: {stderr}[/red]")
-        console.print("[yellow]💡 Tip: Make sure GITHUB_TOKEN is set and repo exists[/yellow]")
+        console.print("[yellow]💡 Tip: Make sure GITHUB_TOKEN has 'Contents: Read and write' permission[/yellow]")
         return False
 
 
