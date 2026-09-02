@@ -1,3 +1,4 @@
+import Systemintegrityverification from '../components/Systemintegrityverification'
 import TrainingTheCsvData from '../components/TrainingTheCsvData'
 import TrainTheUploadedTheCsvFileAndShowTheAnalytics from '../components/TrainTheUploadedTheCsvFileAndShowTheAnalytics'
 import React, { useState, useEffect } from 'react'
@@ -433,6 +434,9 @@ export default function Dashboard() {
 
       {/* ── TrainingTheCsvData sprint feature ── */}
       <TrainingTheCsvData />
+
+      {/* ── Systemintegrityverification sprint feature ── */}
+      <Systemintegrityverification />
 
       <DataAnalytics />
 

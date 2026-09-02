@@ -13,10 +13,14 @@ from rich.console import Console
 from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).parent.parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
-sys.path.insert(0, str(ROOT_DIR / "agents"))
-import utf8_fix
+for p in [str(ROOT_DIR), str(ROOT_DIR / "agents"), str(ROOT_DIR / "scripts")]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+try:
+    import utf8_fix
+except ImportError:
+    pass
 
 load_dotenv()
 console = Console(legacy_windows=False)

@@ -10,30 +10,41 @@ echo "========================================================================="
 echo "⚡ AI Analytics Dashboard — Autonomous Deployment Launcher (Linux/macOS)"
 echo "========================================================================="
 
-echo "[1/6] 📦 Installing Python Dependencies..."
-pip install -r requirements.txt
+# Detect Python binary
+if [ -f "$APP_ROOT/.venv/Scripts/python.exe" ]; then
+    PYTHON="$APP_ROOT/.venv/Scripts/python.exe"
+elif [ -f "$APP_ROOT/.venv/bin/python" ]; then
+    PYTHON="$APP_ROOT/.venv/bin/python"
+elif command -v python3 &>/dev/null && python3 --version &>/dev/null; then
+    PYTHON=python3
+else
+    PYTHON=python
+fi
 
-echo "[2/6] 🟢 Installing Node.js Frontend Dependencies..."
+echo "[1/6] 📦 Checking Python Dependencies..."
+"$PYTHON" -c "import fastapi, uvicorn, pandas, plotly, anthropic" 2>/dev/null || "$PYTHON" -m pip install -r requirements.txt
+
+echo "[2/6] 🟢 Checking Node.js Frontend Dependencies..."
 cd "$APP_ROOT/frontend"
 if [ ! -d "node_modules" ]; then
     npm install
 fi
 cd "$APP_ROOT"
 
-echo "[3/6] 🎭 Installing Playwright Browser Binaries..."
-python3 -m playwright install chromium
+echo "[3/6] 🎭 Checking Playwright Browser Binaries..."
+"$PYTHON" -c "import playwright" 2>/dev/null || "$PYTHON" -m playwright install chromium
 
 echo "[4/6] 🔀 Synchronizing Git Repository..."
 git pull origin main || true
 
 echo "[5/6] 🌙 Running End of Day Push Script..."
-python3 scripts/end_of_day.py || true
+"$PYTHON" scripts/end_of_day.py || true
 
 echo "[6/6] 🚀 Launching All Background Agent Fleet, Watchdog, Memory & MCP Services..."
 
 # Run FastAPI backend in background
 cd "$APP_ROOT/backend"
-python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 &
+"$PYTHON" -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
 # Run Vite frontend in background
@@ -43,30 +54,30 @@ FRONTEND_PID=$!
 
 # Run Sprint Watcher agent loop in background
 cd "$APP_ROOT"
-python3 scripts/run_sprint_watcher.py --interval 60 &
+"$PYTHON" scripts/run_sprint_watcher.py --interval 60 &
 WATCHER_PID=$!
 
 # Run Agent Watchdog Supervisor
-python3 scripts/agent_watchdog.py &
+"$PYTHON" scripts/agent_watchdog.py &
 WATCHDOG_PID=$!
 
 # Run Builder agent
-python3 agents/builder_agent.py --task-id AAD-AUTO --task-title System_Integrity_Verification &
+"$PYTHON" agents/builder_agent.py --task-id AAD-AUTO --task-title System_Integrity_Verification &
 BUILDER_PID=$!
 
 # Run Tester agent
-python3 agents/tester_agent.py &
+"$PYTHON" agents/tester_agent.py &
 TESTER_PID=$!
 
 # Run Memory agent
-python3 -m agents.memory_manager &
+"$PYTHON" -m agents.memory_manager &
 MEMORY_PID=$!
 
 # Run MCP Server Fleet
-python3 -m agents.plane_agent &
+"$PYTHON" -m agents.plane_agent &
 PLANE_MCP_PID=$!
 
-python3 -m agents.git_agent &
+"$PYTHON" -m agents.git_agent &
 GIT_MCP_PID=$!
 
 echo "========================================================================="
