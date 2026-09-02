@@ -87,11 +87,13 @@ def _find_git_bin() -> str:
 def _run_git(command: list[str], cwd: Path = ROOT_DIR) -> tuple[str, str, int]:
     """Run a git command and return (stdout, stderr, returncode)."""
     git_bin = _find_git_bin()
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     result = subprocess.run(
         [git_bin] + command,
         cwd=str(cwd),
         capture_output=True,
-        text=True
+        text=True,
+        env=env,
     )
     return result.stdout.strip(), result.stderr.strip(), result.returncode
 
