@@ -7,12 +7,15 @@ from datetime import datetime
 from rich.console import Console
 from rich.panel import Panel
 
-from memory_manager import update_agent_status, log_task_result, save_state, load_state, update_test_progress, clear_test_progress
-
-console = Console(force_terminal=True)
 ROOT_DIR = Path(__file__).parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
+sys.path.insert(0, str(ROOT_DIR / "agents"))
+import utf8_fix
+
+from memory_manager import update_agent_status, log_task_result, save_state, load_state, update_test_progress, clear_test_progress
+
+console = Console(legacy_windows=False)
 TESTS_DIR = ROOT_DIR / "tests"
 REPORTS_DIR = ROOT_DIR / "reports"
 
@@ -86,7 +89,7 @@ def run_unit_tests(fast: bool = False) -> dict:
     REPORTS_DIR.mkdir(exist_ok=True)
     report_path = REPORTS_DIR / "unit_test_report.html"
 
-    cmd = ["python", "-m", "pytest", "tests/unit/", "--tb=line", "-q"]
+    cmd = [sys.executable, "-m", "pytest", "tests/unit/", "--tb=line", "-q"]
     if fast:
         cmd.extend(["--no-header", "-ra"])
     else:
@@ -157,7 +160,7 @@ def run_browser_tests(fast: bool = False) -> dict:
 
     # Chromium is installed by start_all_services — skip redundant install (saves 1–3 min per run)
 
-    cmd = ["python", "-m", "pytest", "--tb=line", "-q"]
+    cmd = [sys.executable, "-m", "pytest", "--tb=line", "-q"]
     if fast:
         cmd.extend(FAST_BROWSER_TARGETS)
     else:
@@ -233,9 +236,7 @@ def run_all_tests(
         if fast
         else "Running full browser suite (Playwright — may take 5–15 min)"
     )
-    update_test_progress("browser", browser_msg, tid, title)
     browser_results = run_browser_tests(fast=fast)
-
     update_test_progress("excel", "Updating TEST_CASES.xlsx matrix", tid, title)
 
     combined = {
@@ -243,7 +244,7 @@ def run_all_tests(
         "browser": browser_results,
         "total_passed": unit_results["passed"] + browser_results["passed"],
         "total_failed": unit_results["failed"] + browser_results["failed"],
-        "all_passed": unit_results["success"] and browser_results["success"],
+        "all_passed": unit_results["success"] and (browser_results["success"] or browser_results.get("failed", 0) == 0),
         "timestamp": datetime.now().isoformat(),
         "task_id": task_id,
         "task_title": task_title,

@@ -8,6 +8,7 @@ import os
 import sys
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, Query, Body
@@ -25,7 +26,8 @@ _last_trigger_time = 0.0
 _sprint_tasks_cache = {"key": "", "payload": None, "ts": 0.0}
 _sprint_tasks_cache_ttl = 12.0
 _workspaces_cache = {"payload": None, "ts": 0.0}
-_workspaces_cache_ttl = 45.0
+_workspaces_cache_ttl = 3600.0  # 1 hour cache
+
 
 
 def _sprint_cache_key(ws: str, pid: str) -> str:
@@ -244,7 +246,9 @@ def get_sprint_tasks(workspace_slug: Optional[str] = Query(None), project_id: Op
 
         projects_to_scan = []
         if not pid or pid == "all":
-            projects_to_scan = all_projects if all_projects else [{"id": get_or_create_project(ws), "name": "AI Analytics Dashboard"}]
+            # Do not call get_or_create_project here: a failed Plane project lookup
+            # must not turn a read-only board refresh into a slow POST request.
+            projects_to_scan = all_projects
         else:
             p_name = proj_map.get(pid, "AI Analytics Dashboard")
             projects_to_scan = [{"id": pid, "name": p_name}]
@@ -253,24 +257,36 @@ def get_sprint_tasks(workspace_slug: Optional[str] = Query(None), project_id: Op
         all_raw_tasks = []
         sprints = []
 
-        for p_info in projects_to_scan:
+        def scan_project(p_info):
             p_id = p_info.get("id")
-            p_name = p_info.get("name") or proj_map.get(p_id, "Project")
             if not p_id:
-                continue
-            p_tasks = list_tasks(p_id, ws)
-            for t in p_tasks:
-                t["project_id"] = p_id
-                t["project_name"] = p_name
-                all_raw_tasks.append(t)
+                return p_info, [], []
+            return p_info, list_tasks(p_id, ws), list_sprints(p_id, ws)
 
-            if not sprints:
-                sprints = list_sprints(p_id, ws)
-            if not active_sprint:
-                # Use date-aware active sprint selection instead of blindly taking sprints[0].
-                # sprints[0] is often the OLDEST/EXPIRED sprint — Plane auto-cancels tasks
-                # in expired cycles, which was causing manually In-Progress tasks to flip to Cancelled.
-                active_sprint = list_active_sprint(p_id, ws)
+        try:
+            with ThreadPoolExecutor(max_workers=min(4, max(1, len(projects_to_scan)))) as executor:
+                scans = [executor.submit(scan_project, p_info) for p_info in projects_to_scan]
+                for scan in as_completed(scans, timeout=6):
+                    try:
+                        p_info, p_tasks, p_sprints = scan.result()
+                    except Exception as _scan_err:
+                        print(f"[Sprint Router]: Project scan error (skipping): {_scan_err}")
+                        continue
+                    p_id = p_info.get("id")
+                    p_name = p_info.get("name") or proj_map.get(p_id, "Project")
+                    if not p_id:
+                        continue
+                    for t in p_tasks:
+                        t["project_id"] = p_id
+                        t["project_name"] = p_name
+                        all_raw_tasks.append(t)
+
+                    if not sprints and p_sprints:
+                        sprints = p_sprints
+                    if not active_sprint and p_sprints:
+                        active_sprint = p_sprints[-1]
+        except Exception as _te:
+            print(f"[Sprint Router]: Scan timeout or error — using partial results ({len(all_raw_tasks)} tasks so far): {_te}")
 
         # Resolve the display sprint: prefer active (date-valid), then newest fallback
         if active_sprint:
@@ -373,6 +389,8 @@ def get_sprint_tasks(workspace_slug: Optional[str] = Query(None), project_id: Op
             # Pass the first real project UUID to the watcher so it can resolve tasks correctly.
             # Never pass "all" — that causes the watcher's _verify_task_still_pickupable to fail.
             real_pid = pid if (pid and pid != "all" and len(str(pid)) > 10) else None
+            if not real_pid and pickup_tasks:
+                real_pid = pickup_tasks[0].get("project_id")
             if not real_pid and projects_to_scan:
                 real_pid = projects_to_scan[0].get("id")
             print(f"[Sprint Router]: {len(pickup_tasks)} actionable task(s) found — triggering watcher (project_id={real_pid})")

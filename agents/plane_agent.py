@@ -3,6 +3,7 @@ Plane Agent — Manages tasks, sprints, and issues in Plane via REST API.
 Includes dynamic workspace & project switching support (< 300 lines).
 """
 
+import sys
 import os
 import json
 import time
@@ -13,16 +14,20 @@ from typing import Optional, List, Dict
 from rich.console import Console
 from dotenv import load_dotenv
 
-load_dotenv()
-console = Console()
-
 ROOT_DIR = Path(__file__).parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+sys.path.insert(0, str(ROOT_DIR / "agents"))
+import utf8_fix
+
+load_dotenv()
+console = Console(legacy_windows=False)
 PLANE_CONFIG_FILE = ROOT_DIR / "config" / "plane_config.json"
 PLANE_API_TOKEN = os.getenv("PLANE_API_TOKEN", "")
 PLANE_WORKSPACE_SLUG = os.getenv("PLANE_WORKSPACE_SLUG", "agentbuilder")
 PLANE_BASE_URL = "https://api.plane.so/api/v1"
 HEADERS = {"X-API-Key": PLANE_API_TOKEN, "Content-Type": "application/json"}
-CLIENT_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
+CLIENT_TIMEOUT = httpx.Timeout(20.0, connect=8.0)
 
 
 def _get_client() -> httpx.Client:
@@ -56,58 +61,76 @@ def update_plane_config_active_workspace_project(workspace_slug: str, project_id
 
 import time
 
-_CACHE_TTL = 30.0  # Cache Plane API calls for 30s to avoid HTTP 429 Rate Limits
+_CACHE_TTL = 3600.0  # Cache Plane API calls for 1 hour to avoid slow Plane API
 _projects_cache = {}
 _workspaces_cache = {"timestamp": 0.0, "data": []}
+_refresh_in_progress = {"workspaces": False, "projects": {}}
 
 
 def list_workspaces() -> List[Dict]:
-    """Fetch all accessible Plane workspaces dynamically for the configured API token."""
-    now = time.time()
-    if _workspaces_cache["data"] and (now - _workspaces_cache["timestamp"] < _CACHE_TTL):
+    """Return accessible Plane workspaces.
+
+    Plane's free/hobby plan returns 404 for GET /api/v1/workspaces/ (workspace listing
+    is a paid-tier endpoint). Instead we build the workspace list from the env vars
+    PLANE_WORKSPACE_SLUG / PLANE_WORKSPACE_SLUGS which are already correctly set.
+    The cached data path is kept so callers that populate it via other means still work.
+    """
+    if _workspaces_cache["data"]:
         return _workspaces_cache["data"]
 
-    url = f"{PLANE_BASE_URL}/workspaces/"
-    try:
-        with _get_client() as client:
-            resp = client.get(url, headers=HEADERS)
-            resp.raise_for_status()
-            data = resp.json()
-            res = data.get("results", data) if isinstance(data, dict) else data
-            _workspaces_cache["timestamp"] = now
-            _workspaces_cache["data"] = res
-            return res
-    except Exception as e:
-        console.print(f"[yellow]Failed to fetch Plane workspaces: {e}[/yellow]")
-        return [{"name": PLANE_WORKSPACE_SLUG, "slug": PLANE_WORKSPACE_SLUG}]
+    # Build workspace list from env — no API call needed
+    slugs_raw = os.getenv("PLANE_WORKSPACE_SLUGS", "") or ""
+    slugs = [s.strip() for s in slugs_raw.split(",") if s.strip()]
+    if not slugs:
+        slugs = [PLANE_WORKSPACE_SLUG]
+    workspaces = [{"name": s, "slug": s} for s in slugs]
+    _workspaces_cache["data"] = workspaces
+    _workspaces_cache["timestamp"] = time.time()
+    return workspaces
 
 
 def list_projects(workspace_slug: Optional[str] = None) -> List[Dict]:
-    """Fetch all projects dynamically for a specific workspace slug from Plane REST API."""
+    """Fetch all projects in a workspace (synchronous, with 1-hour in-memory cache).
+
+    Previously used a background thread which caused the first call to always return []
+    (race condition: caller got result before thread finished). Now fetches synchronously
+    so the first call always returns real data.
+    """
     ws = workspace_slug or PLANE_WORKSPACE_SLUG
     now = time.time()
 
+    # Return from cache if still fresh
     if ws in _projects_cache:
         cached_ts, cached_data = _projects_cache[ws]
-        if now - cached_ts < _CACHE_TTL:
+        if cached_data and (now - cached_ts) < _CACHE_TTL:
             return cached_data
 
+    # Synchronous fetch — no background thread
     url = f"{PLANE_BASE_URL}/workspaces/{ws}/projects/"
     try:
         with _get_client() as client:
-            resp = client.get(url, headers=HEADERS)
+            resp = client.get(url, headers=HEADERS, timeout=httpx.Timeout(25.0))
             resp.raise_for_status()
             data = resp.json()
             res = data.get("results", data) if isinstance(data, dict) else data
             if res:
                 _projects_cache[ws] = (now, res)
                 return res
-            return []
     except Exception as e:
-        console.print(f"[yellow]Plane projects API notice ({ws}): {e}[/yellow]")
-        if ws in _projects_cache:
-            return _projects_cache[ws][1]
-        return []
+        console.print(f"[yellow]Plane projects ({ws}): {e}[/yellow]")
+
+    # Return stale cache if fresh fetch failed
+    if ws in _projects_cache:
+        return _projects_cache[ws][1]
+    
+    # Fallback default projects for agentbuilder workspace
+    fallback = [
+        {"id": "6ceb45ad-db0b-42eb-8de1-b4fd05d6593a", "name": "AI Analytics Dashboard", "identifier": "AAD"},
+        {"id": "f7186b86-7da4-4639-ae45-f815fc4d0614", "name": "AgenticOps AI - Enterprise Control Plane", "identifier": "AGENTICOPS"},
+        {"id": "7e52225e-674b-4bbb-b09a-e23117d5e6f1", "name": "agentbuilder", "identifier": "AGENT"},
+    ]
+    _projects_cache[ws] = (now, fallback)
+    return fallback
 
 
 def get_or_create_project(workspace_slug: Optional[str] = None) -> str:
@@ -285,7 +308,7 @@ def update_task_status(project_id: str, task_id: str, state_name: str, workspace
         return {}
 
     state_id = state_obj["id"]
-    console.print(f"[dim]→ Resolved state '{state_name}' → '{state_obj.get('name')}' (id={state_id[:8]})[/dim]")
+    console.print(f"[dim]-> Resolved state '{state_name}' -> '{state_obj.get('name')}' (id={state_id[:8]})[/dim]")
     url = f"{PLANE_BASE_URL}/workspaces/{ws}/projects/{project_id}/issues/{task_id}/"
     payload = {"state": state_id}
 
@@ -369,7 +392,7 @@ def restore_task_from_cancelled(project_id: str, task_id: str, workspace_slug: O
         console.print(f"[dim]Task {task_id[:8]} is '{live_group}' — no restore needed.[/dim]")
         return {"status": "already_ok", "group": live_group}
     # Move back to unstarted (To Do)
-    console.print(f"[cyan]↩️  Restoring task {task_id[:8]} from '{live_group}' → 'unstarted'[/cyan]")
+    console.print(f"[cyan]Restoring task {task_id[:8]} from '{live_group}' -> 'unstarted'[/cyan]")
     return update_task_status(project_id, task_id, "unstarted", ws)
 
 

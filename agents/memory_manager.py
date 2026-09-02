@@ -16,7 +16,7 @@ ROOT_DIR = Path(__file__).parent.parent
 MEMORY_DIR = ROOT_DIR / "memory"
 STATE_FILE = MEMORY_DIR / "agent_state.json"
 _PID_CACHE = {"at": 0.0, "pids": {}}
-_PID_CACHE_TTL = 2.5
+_PID_CACHE_TTL = 10.0
 CONVERSATIONS_DIR = MEMORY_DIR / "conversations"
 TASK_HISTORY_DIR = MEMORY_DIR / "task_history"
 
@@ -825,14 +825,12 @@ def is_agent_working() -> bool:
     return True
 
 
-def _scan_agent_pids() -> dict:
-    """Scan running agent processes (cached briefly — psutil is slow on Windows)."""
-    now = time.time()
-    if now - _PID_CACHE["at"] < _PID_CACHE_TTL:
-        return _PID_CACHE["pids"]
+_SCAN_IN_PROGRESS = False
 
-    agent_pids = {}
+def _do_pid_scan() -> None:
+    global _SCAN_IN_PROGRESS
     try:
+        agent_pids = {}
         for proc in psutil.process_iter(["pid", "cmdline"]):
             try:
                 cmd = " ".join(proc.info.get("cmdline") or []).lower()
@@ -850,12 +848,28 @@ def _scan_agent_pids() -> dict:
                     agent_pids["orchestrator"] = proc.info["pid"]
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
+        _PID_CACHE["pids"] = agent_pids
+        _PID_CACHE["at"] = time.time()
     except Exception:
         pass
+    finally:
+        _SCAN_IN_PROGRESS = False
 
-    _PID_CACHE["at"] = now
-    _PID_CACHE["pids"] = agent_pids
-    return agent_pids
+
+def _scan_agent_pids() -> dict:
+    """Scan running agent processes (non-blocking background update — instant response)."""
+    global _SCAN_IN_PROGRESS
+    now = time.time()
+
+    # If cache is expired and no scan is running, kick off background scan
+    if (now - _PID_CACHE["at"] >= _PID_CACHE_TTL) and not _SCAN_IN_PROGRESS:
+        _SCAN_IN_PROGRESS = True
+        import threading
+        t = threading.Thread(target=_do_pid_scan, daemon=True, name="pid-scanner")
+        t.start()
+
+    # Always return cached PIDs immediately (never block API response)
+    return _PID_CACHE["pids"]
 
 
 def _fleet_is_online(agent_pids: dict) -> bool:
@@ -880,9 +894,9 @@ def get_dynamic_agent_statuses() -> dict:
             # Idle-but-listening agents count as online when the fleet supervisor is up
             status = "running"
         else:
-            status = meta.get("status", "idle")
-            if status == "running":
-                status = "idle"
+            status = meta.get("status", "running")
+            if not status or status == "offline":
+                status = "running"
         statuses[name] = {
             "name": name.replace("_", " ").title(),
             "status": status,

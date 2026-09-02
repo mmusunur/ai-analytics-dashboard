@@ -1,3 +1,4 @@
+import TrainTheUploadedTheCsvFileAndShowTheAnalytics from '../components/TrainTheUploadedTheCsvFileAndShowTheAnalytics'
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import axios from 'axios'
@@ -426,7 +427,9 @@ export default function Dashboard() {
         onApplyFilter={handleApplyTableFilter}
       />
 
-      {/* ── Data Analytics — CSV/Excel upload + ML training on dashboard ── */}
+      {/* ── TrainTheUploadedTheCsvFileAndShowTheAnalytics sprint feature ── */}
+      <TrainTheUploadedTheCsvFileAndShowTheAnalytics />
+
       <DataAnalytics />
 
       {/* ── Warehouse Level KPI Grid ── */}

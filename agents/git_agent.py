@@ -3,6 +3,7 @@ Git Agent — Handles end-of-day git operations.
 Stages all changes, creates meaningful commit messages, and pushes to remote.
 """
 
+import sys
 import os
 import subprocess
 from datetime import datetime
@@ -11,9 +12,14 @@ from typing import Optional
 from rich.console import Console
 from dotenv import load_dotenv
 
-load_dotenv()
-console = Console()
+ROOT_DIR = Path(__file__).parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+sys.path.insert(0, str(ROOT_DIR / "agents"))
+import utf8_fix
 
+load_dotenv()
+console = Console(legacy_windows=False)
 ROOT_DIR = Path(__file__).parent.parent
 GITHUB_REPO = os.getenv("GITHUB_REPO", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
@@ -55,10 +61,34 @@ REPO_IGNORE_PATTERNS = (
 )
 
 
+def _find_git_bin() -> str:
+    """Find usable git executable path on Windows or POSIX."""
+    import shutil, glob
+    which = shutil.which("git") or shutil.which("git.exe")
+    if which:
+        return which
+    # Common Windows locations including GitHubDesktop
+    user_home = os.path.expanduser("~")
+    candidates = [
+        r"C:\Program Files\Git\cmd\git.exe",
+        r"C:\Program Files\Git\bin\git.exe",
+        r"C:\Program Files (x86)\Git\cmd\git.exe",
+        os.path.join(user_home, r"AppData\Local\Programs\Git\cmd\git.exe"),
+    ]
+    # Search GitHubDesktop paths
+    ghd_pattern = os.path.join(user_home, r"AppData\Local\GitHubDesktop\app-*\resources\app\git\cmd\git.exe")
+    candidates.extend(glob.glob(ghd_pattern))
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return "git"
+
+
 def _run_git(command: list[str], cwd: Path = ROOT_DIR) -> tuple[str, str, int]:
     """Run a git command and return (stdout, stderr, returncode)."""
+    git_bin = _find_git_bin()
     result = subprocess.run(
-        ["git"] + command,
+        [git_bin] + command,
         cwd=str(cwd),
         capture_output=True,
         text=True
@@ -270,8 +300,9 @@ def generate_commit_message(
 
 def commit(message: str) -> bool:
     """Commit staged changes with the given message."""
+    git_bin = _find_git_bin()
     result = subprocess.run(
-        ["git", "commit", "-F", "-"],
+        [git_bin, "commit", "-F", "-"],
         cwd=str(ROOT_DIR),
         input=message,
         capture_output=True,

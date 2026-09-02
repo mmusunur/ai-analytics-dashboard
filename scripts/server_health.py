@@ -43,10 +43,11 @@ def start_backend() -> None:
 
 def start_frontend() -> None:
     flags = subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0
+    cmd = ["cmd.exe", "/c", "npm", "run", "dev", "--", "--host", "0.0.0.0"] if sys.platform == "win32" else "npm run dev -- --host 0.0.0.0"
     subprocess.Popen(
-        "npm run dev -- --host 0.0.0.0",
+        cmd,
         cwd=str(ROOT_DIR / "frontend"),
-        shell=True,
+        shell=(sys.platform != "win32"),
         creationflags=flags,
     )
 

@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import axios from 'axios'
 import {
   LayoutDashboard, BarChart3, LineChart, Bot,
   Database, ChevronRight, Menu, EyeOff, Kanban, Plug
 } from 'lucide-react'
+import { useAgentStatus } from '../hooks/useAgentStatus'
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard, section: 'MAIN' },
@@ -34,34 +33,7 @@ const API = import.meta.env.VITE_API_URL || ''
 
 export default function Sidebar({ collapsed, onToggle, onHide }) {
   const location = useLocation()
-  const [agentsData, setAgentsData] = useState({})
-  const [pipeline, setPipeline] = useState({ phase: 'idle' })
-  const [agentsError, setAgentsError] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-
-    const fetchStatus = () => {
-      axios.get(`${API}/api/agents/status`, { timeout: 8000 })
-        .then(res => {
-          if (cancelled) return
-          if (res.data?.agents) {
-            setAgentsData(res.data.agents)
-            setAgentsError(false)
-          }
-          if (res.data?.pipeline) setPipeline(res.data.pipeline)
-        })
-        .catch(() => {
-          if (!cancelled) setAgentsError(true)
-        })
-    }
-    fetchStatus()
-    const timer = setInterval(fetchStatus, 10000)
-    return () => {
-      cancelled = true
-      clearInterval(timer)
-    }
-  }, [])
+  const { agentsData, pipeline, isLoading, error } = useAgentStatus()
 
   const sections = [...new Set(navItems.map(n => n.section))]
 
@@ -195,7 +167,7 @@ export default function Sidebar({ collapsed, onToggle, onHide }) {
         }}>
           <div className="nav-section-label" style={{ paddingTop: 0, marginBottom: '6px' }}>AGENT STATUS</div>
 
-          {agentsError && (
+          {error && (
             <div style={{ fontSize: '10px', color: '#fbbf24', marginBottom: '6px' }}>
               Backend unreachable — showing last known / default agents
             </div>

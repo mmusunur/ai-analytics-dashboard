@@ -3,7 +3,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-async function fetchWithRetry(fn, retries = 2) {
+async function fetchWithRetry(fn, retries = 0) {
   let lastErr
   for (let i = 0; i <= retries; i++) {
     try {
@@ -32,6 +32,7 @@ export function useLivePoll(fetchFn, options = {}) {
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [error, setError] = useState(null)
   const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(Math.ceil(intervalMs / 1000))
+  const refreshInProgress = useRef(false)
 
   const fetchRef = useRef(fetchFn)
   fetchRef.current = fetchFn
@@ -43,7 +44,8 @@ export function useLivePoll(fetchFn, options = {}) {
   const isHardPaused = pause && pauseIntervalMs == null
 
   const refresh = useCallback(async (silent = true) => {
-    if (!enabled) return null
+    if (!enabled || refreshInProgress.current) return null
+    refreshInProgress.current = true
     try {
       setIsRefreshing(true)
       const result = await fetchWithRetry(() => fetchRef.current())
@@ -59,6 +61,7 @@ export function useLivePoll(fetchFn, options = {}) {
     } finally {
       setIsRefreshing(false)
       setIsInitialLoad(false)
+      refreshInProgress.current = false
     }
   }, [enabled, effectiveInterval])
 

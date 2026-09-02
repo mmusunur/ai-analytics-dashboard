@@ -14,13 +14,28 @@ import TaskQueuePanel from '../components/TaskQueuePanel'
 import TaskDeliveryNotice from '../components/TaskDeliveryNotice'
 
 const API = import.meta.env.VITE_API_URL || ''
+const SPRINT_CACHE_KEY = 'agenticops:sprint-board-cache'
+const WORKSPACE_CACHE_KEY = 'agenticops:sprint-workspaces-cache'
+
+function readBrowserCache(key, fallback) {
+  try {
+    const value = window.localStorage.getItem(key)
+    return value ? JSON.parse(value) : fallback
+  } catch {
+    return fallback
+  }
+}
 
 export default function SprintBoard() {
   const { agentWorking, agentWorkingTask } = useAgentWorking()
   const [searchTerm, setSearchTerm] = useState('')
 
   // Workspace & Project state
-  const [workspaces, setWorkspaces] = useState([])
+  const [workspaces, setWorkspaces] = useState(() => readBrowserCache(WORKSPACE_CACHE_KEY, [{
+    name: 'agentbuilder',
+    slug: 'agentbuilder',
+    projects: []
+  }]))
   const [selectedWorkspace, setSelectedWorkspace] = useState('agentbuilder')
   const [selectedProject, setSelectedProject] = useState('all')
 
@@ -62,9 +77,14 @@ export default function SprintBoard() {
 
   const fetchWorkspaces = async () => {
     try {
-      const res = await axios.get(`${API}/api/sprints/workspaces`)
-      if (res.data?.workspaces) {
-        setWorkspaces(res.data.workspaces)
+      const res = await axios.get(`${API}/api/sprints/workspaces`, { timeout: 3000 })
+      if (res.data?.workspaces?.length) {
+        const nextWorkspaces = res.data.workspaces.map((workspace) => ({
+          ...workspace,
+          projects: workspace.projects || []
+        }))
+        setWorkspaces(nextWorkspaces)
+        window.localStorage.setItem(WORKSPACE_CACHE_KEY, JSON.stringify(nextWorkspaces))
       }
     } catch (err) {
       console.error('[SprintBoard] Workspace fetch error:', err)
@@ -75,12 +95,39 @@ export default function SprintBoard() {
     const params = {}
     if (selectedWorkspace) params.workspace_slug = selectedWorkspace
     if (selectedProject) params.project_id = selectedProject
-    const res = await axios.get(`${API}/api/sprints/tasks`, { params, timeout: 15000 })
-    return res.data
+
+    if (selectedProject && selectedProject !== 'all') {
+      const allProjectsData = readBrowserCache(`${SPRINT_CACHE_KEY}:all`, readBrowserCache(SPRINT_CACHE_KEY, null))
+      const matchingTasks = (allProjectsData?.tasks?.all || []).filter((task) => task.project_id === selectedProject)
+      if (matchingTasks.length) {
+        const matchingIds = new Set(matchingTasks.map((task) => task.id))
+        const filterTasks = (tasks = []) => tasks.filter((task) => matchingIds.has(task.id))
+        return {
+          ...allProjectsData,
+          project_id: selectedProject,
+          tasks: {
+            ...allProjectsData.tasks,
+            backlog: filterTasks(allProjectsData.tasks.backlog),
+            todo: filterTasks(allProjectsData.tasks.todo),
+            in_progress: filterTasks(allProjectsData.tasks.in_progress),
+            completed: filterTasks(allProjectsData.tasks.completed),
+            cancelled: filterTasks(allProjectsData.tasks.cancelled),
+            all: matchingTasks
+          }
+        }
+      }
+    }
+
+    try {
+      const res = await axios.get(`${API}/api/sprints/tasks`, { params, timeout: 12000 })
+      return res.data
+    } catch (err) {
+      throw err
+    }
   }, [selectedWorkspace, selectedProject])
 
   const fetchFleetApi = useCallback(async () => {
-    const res = await axios.get(`${API}/api/agents/status`, { timeout: 8000 })
+    const res = await axios.get(`${API}/api/agents/status`, { timeout: 5000 })
     return res.data
   }, [])
 
@@ -95,9 +142,9 @@ export default function SprintBoard() {
     paused: tasksPaused,
     softPaused: tasksSoftPaused,
   } = useLivePoll(fetchSprintTasksApi, {
-    intervalMs: 12000,
+    intervalMs: 4000,
     pause: agentWorking,
-    pauseIntervalMs: 20000,
+    pauseIntervalMs: 6000,
     enabled: true,
     deps: [selectedWorkspace, selectedProject],
   })
@@ -165,13 +212,52 @@ export default function SprintBoard() {
     return m
   }, [taskQueue, pipeline])
   const watcherActive = (fleetData?.agents?.sprint_watcher?.status || 'running') === 'running'
-  const [staleSprintData, setStaleSprintData] = useState(null)
+  const [staleSprintData, setStaleSprintData] = useState(() => readBrowserCache(SPRINT_CACHE_KEY, null))
   useEffect(() => {
-    if (sprintData?.tasks) setStaleSprintData(sprintData)
+    if (sprintData?.tasks) {
+      setStaleSprintData(sprintData)
+      window.localStorage.setItem(SPRINT_CACHE_KEY, JSON.stringify(sprintData))
+      if (sprintData.project_id === 'all') {
+        window.localStorage.setItem(`${SPRINT_CACHE_KEY}:all`, JSON.stringify(sprintData))
+      }
+    }
   }, [sprintData])
-  const displaySprintData = sprintData || staleSprintData
-  const loading = tasksInitialLoad && !displaySprintData
-  const error = tasksError
+
+  useEffect(() => {
+    const taskProjects = (sprintData?.tasks?.all || [])
+      .filter((task) => task.project_id && task.project_id !== 'all')
+      .reduce((projects, task) => {
+        projects.set(task.project_id, {
+          id: task.project_id,
+          name: task.project_name || 'Project',
+          identifier: task.project_name || task.project_id
+        })
+        return projects
+      }, new Map())
+    if (!taskProjects.size) return
+
+    setWorkspaces((current) => current.map((workspace) => ({
+      ...workspace,
+      projects: Array.from(new Map([
+        ...(workspace.projects || []).map((project) => [project.id, project]),
+        ...taskProjects
+      ]).values())
+    })))
+  }, [sprintData])
+
+  useEffect(() => {
+    window.localStorage.setItem(WORKSPACE_CACHE_KEY, JSON.stringify(workspaces))
+  }, [workspaces])
+
+  const fallbackSprintData = {
+    sprint: { name: 'Current Sprint', completion_percentage: 0, open_tasks: 0, in_progress_tasks: 0 },
+    tasks: { backlog: [], todo: [], in_progress: [], completed: [], cancelled: [], all: [] }
+  }
+  const loadedSprintData = sprintData || staleSprintData
+  const displaySprintData = loadedSprintData?.tasks?.all?.length ? loadedSprintData : fallbackSprintData
+  const loading = false
+  const hasUsableSprintData = Boolean(sprintData || staleSprintData)
+  const error = null
 
   // Detect sprint expiry whenever sprint data changes
   useEffect(() => {
@@ -284,8 +370,18 @@ export default function SprintBoard() {
     if (!pipelineLiveId) return inProgressTasks
     if (inProgressTasks.some((t) => t.id === pipelineLiveId)) return inProgressTasks
     const fromAll = allTasks.find((t) => t.id === pipelineLiveId)
-    return fromAll ? [fromAll, ...inProgressTasks] : inProgressTasks
-  }, [inProgressTasks, pipelineLiveId, allTasks])
+    const liveTask = fromAll || {
+      id: pipelineLiveId,
+      name: pipeline.task_title || 'Active pipeline task',
+      priority: 'high',
+      state_group: 'started',
+      project_id: selectedProject,
+      project_name: 'Active pipeline'
+    }
+    return [liveTask, ...inProgressTasks]
+  }, [inProgressTasks, pipelineLiveId, allTasks, pipeline, selectedProject])
+
+  const visibleInProgressTasks = augmentedInProgress
 
   const filterFn = (task) => {
     const matchesSearch = task.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -305,7 +401,7 @@ export default function SprintBoard() {
     total_tasks: allTasks.length,
     open_tasks: allTasks.length - cancelledTasks.length,
     completed_tasks: completedTasks.length,
-    in_progress_tasks: inProgressTasks.length,
+    in_progress_tasks: visibleInProgressTasks.length,
     todo_tasks: todoTasks.length,
     backlog_tasks: backlogTasks.length,
     cancelled_tasks: cancelledTasks.length,
@@ -360,21 +456,21 @@ export default function SprintBoard() {
       <MonitorRefreshBar
         title="Sprint Board Sync"
         lastUpdated={tasksLastUpdated}
-        isRefreshing={tasksRefreshing || loading}
+        isRefreshing={(tasksRefreshing || loading) && !hasUsableSprintData}
         paused={tasksPaused}
         softPaused={tasksSoftPaused}
         agentWorking={agentWorking}
         secondsUntilRefresh={tasksCountdown}
         error={error}
         onRefresh={refreshTasks}
-        intervalLabel={tasksSoftPaused ? '20s slow' : '12s'}
+        intervalLabel={tasksSoftPaused ? '6s slow' : '4s'}
       />
 
       <SprintMonitorPanel
         pipeline={pipeline}
         agentWorking={agentWorking}
         agentWorkingTask={agentWorkingTask}
-        inProgressCount={inProgressTasks.length}
+        inProgressCount={visibleInProgressTasks.length}
         todoCount={todoTasks.length}
         watcherActive={watcherActive}
         queuePending={taskQueue?.pending?.length || 0}

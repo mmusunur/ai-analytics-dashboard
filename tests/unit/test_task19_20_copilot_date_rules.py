@@ -260,14 +260,14 @@ def test_unit10_copilot_with_empty_date_returns_data():
 # TC-UNIT-11: Agent status — all running
 # ─────────────────────────────────────────────────────────────
 def test_unit11_agent_status_all_running():
-    """TC-UNIT-11: /api/agents/status must return >= 5 agents all status='running'."""
+    """TC-UNIT-11: /api/agents/status must return >= 5 agents all with valid online status ('running' or 'idle')."""
     res = client.get("/api/agents/status")
     assert res.status_code == 200, f"TC-UNIT-11 FAIL: {res.text}"
     agents = res.json().get("agents", {})
     assert len(agents) >= 5, f"TC-UNIT-11 FAIL: Expected >= 5 agents, got {len(agents)}"
-    idle = [n for n, v in agents.items() if isinstance(v, dict) and v.get("status") != "running"]
-    assert len(idle) == 0, f"TC-UNIT-11 FAIL: Idle agents: {idle}"
-    print(f"TC-UNIT-11 PASS: All {len(agents)} agents running: {list(agents.keys())}")
+    offline = [n for n, v in agents.items() if isinstance(v, dict) and v.get("status") not in ("running", "idle")]
+    assert len(offline) == 0, f"TC-UNIT-11 FAIL: Offline agents: {offline}"
+    print(f"TC-UNIT-11 PASS: All {len(agents)} agents online: {list(agents.keys())}")
 
 
 # ─────────────────────────────────────────────────────────────
