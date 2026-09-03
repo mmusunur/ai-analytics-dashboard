@@ -477,7 +477,7 @@ def _build_usage_guide(
 ) -> dict:
     """User-facing delivery notice — where to find and how to use agent-built features."""
     primary_intent = next((i for i in (intents or []) if i in BUILD_USAGE_GUIDES), None)
-    base = dict(BUILD_USAGE_GUIDES.get(primary_intent) or {})
+    base = dict(BUILD_USAGE_GUIDES.get(primary_intent, {}) if primary_intent else {})
     route_hint = _infer_route_from_files(files_modified)
 
     if not base:

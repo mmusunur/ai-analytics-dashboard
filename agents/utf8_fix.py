@@ -11,14 +11,16 @@ os.environ["PYTHONUTF8"] = "1"
 
 def init_utf8():
     """Configures stdout and stderr to handle UTF-8 safely on Windows."""
-    if hasattr(sys.stdout, "reconfigure"):
+    reconfig_out = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfig_out):
         try:
-            sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+            reconfig_out(encoding="utf-8", errors="backslashreplace")
         except Exception:
             pass
-    if hasattr(sys.stderr, "reconfigure"):
+    reconfig_err = getattr(sys.stderr, "reconfigure", None)
+    if callable(reconfig_err):
         try:
-            sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+            reconfig_err(encoding="utf-8", errors="backslashreplace")
         except Exception:
             pass
 

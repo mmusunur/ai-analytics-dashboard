@@ -2,8 +2,9 @@
 Charts Router — Returns chart-ready data for the React frontend matching selected Target DB & Order Date.
 """
 
-from typing import Any
+from typing import Any, cast
 import numpy as np
+import pandas as pd
 from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import JSONResponse
 from services import data_service
@@ -142,8 +143,8 @@ def get_bar_chart(
     batch_clean = _clean_param(batch_id, "")
     oeinv_clean = _clean_param(oeinv, "")
 
-    col_val = str(column) if not hasattr(column, 'default') else (column.default or "warehouse")
-    if col_val == "warehouse" or column == "warehouse":
+    col_val = _clean_param(column, "warehouse")
+    if col_val == "warehouse" or str(column) == "warehouse":
         from app.warehouse_service import get_warehouse_statistics
         stats = get_warehouse_statistics(
             target_db=target_db_clean, oerdte=oerdte_clean, oewhse=oewhse_clean,
@@ -172,19 +173,21 @@ def get_bar_chart(
         })
 
     df = data_service.get_or_generate()
-    if column not in df.columns:
+    col_str = str(column)
+    if col_str not in df.columns:
         raise HTTPException(status_code=400, detail=f"Column '{column}' not found")
 
-    metric_col = metric if metric in df.columns else df.select_dtypes(include=np.number).columns[0]
-    grouped = df.groupby(column)[metric_col].mean().reset_index()
+    metric_col = str(metric if metric in df.columns else df.select_dtypes(include="number").columns[0])
+    mean_res = df.groupby(col_str)[metric_col].mean()
+    grouped = pd.DataFrame(mean_res).reset_index()
     grouped[metric_col] = grouped[metric_col].round(2)
     grouped.columns = ["label", "value"]
 
     return JSONResponse({
         "chart_type": "bar",
-        "title": f"Average {metric_col.replace('_', ' ').title()} by {column.replace('_', ' ').title()}",
+        "title": f"Average {metric_col.replace('_', ' ').title()} by {col_str.replace('_', ' ').title()}",
         "data": grouped.to_dict(orient="records"),
-        "x_label": column,
+        "x_label": col_str,
         "y_label": f"Avg {metric_col}"
     })
 
@@ -248,7 +251,7 @@ async def get_heatmap():
             records.append({
                 "x": col_label,
                 "y": row_label,
-                "value": float(corr.iloc[i, j])
+                "value": float(cast(float, corr.iloc[i, j]))
             })
 
     return JSONResponse({
@@ -263,10 +266,14 @@ async def get_heatmap():
 async def get_distribution(column: str = Query("order_qty", description="Numeric column for distribution")):
     """Return histogram distribution data for numeric columns."""
     df = data_service.get_or_generate()
-    if column not in df.columns or not np.issubdtype(df[column].dtype, np.number):
-        column = df.select_dtypes(include=np.number).columns[0]
+    col_str = column
+    if col_str not in df.columns or not pd.api.types.is_numeric_dtype(df[col_str].dtype):
+        num_cols = df.select_dtypes(include="number").columns
+        if len(num_cols) > 0:
+            col_str = num_cols[0]
 
-    counts, bin_edges = np.histogram(df[column].dropna(), bins=20)
+    arr = np.asarray(df[col_str].dropna(), dtype=float)
+    counts, bin_edges = np.histogram(arr, bins=20)
     bins_data = [
         {
             "bin": f"{int(bin_edges[i])}-{int(bin_edges[i+1])}",

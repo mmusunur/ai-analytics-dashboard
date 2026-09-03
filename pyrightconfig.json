@@ -1,0 +1,13 @@
+{
+  "extraPaths": [
+    ".",
+    "agents",
+    "backend",
+    "backend/app",
+    "scripts",
+    "tests"
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "typeCheckingMode": "basic"
+}

@@ -5,7 +5,7 @@ Data Service — handles CSV ingestion, sample generation, and summarization.
 import numpy as np
 import pandas as pd
 from io import BytesIO
-from typing import Optional
+from typing import Optional, cast
 
 # In-memory data store (singleton per server process)
 _dataframe_store: Optional[pd.DataFrame] = None
@@ -45,7 +45,7 @@ def load_dataframe() -> Optional[pd.DataFrame]:
     return _dataframe_store
 
 
-def set_dataframe(df: pd.DataFrame) -> None:
+def set_dataframe(df: Optional[pd.DataFrame]) -> None:
     """Store a dataframe in memory."""
     global _dataframe_store
     _dataframe_store = df
@@ -78,12 +78,13 @@ def summarize(df: pd.DataFrame) -> dict:
     numeric_df = df.select_dtypes(include=np.number)
     stats = {}
     for col in numeric_df.columns:
+        series = numeric_df[col]
         stats[col] = {
-            "mean": round(float(numeric_df[col].mean()), 2),
-            "median": round(float(numeric_df[col].median()), 2),
-            "std": round(float(numeric_df[col].std()), 2),
-            "min": round(float(numeric_df[col].min()), 2),
-            "max": round(float(numeric_df[col].max()), 2),
+            "mean": round(float(cast(float, series.mean())), 2),
+            "median": round(float(cast(float, series.median())), 2),
+            "std": round(float(cast(float, series.std())), 2),
+            "min": round(float(cast(float, series.min())), 2),
+            "max": round(float(cast(float, series.max())), 2),
         }
 
     return {

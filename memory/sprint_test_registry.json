@@ -5,7 +5,7 @@
       "task_title": "Remove Unwanted Content",
       "description": "Hide Copilot Search Fixes and Agent Monitor from dashboard",
       "project_name": "AI Analytics Dashboard",
-      "registered_at": "2026-09-02T21:16:59.311456",
+      "registered_at": "2026-09-03T13:07:49.119762",
       "cases": [
         {
           "case_id": "TC-TASK-TEST-TAS-SMOKE",
@@ -163,7 +163,7 @@
       "task_title": "Sprint Board Navigation",
       "description": "Verify kanban columns",
       "project_name": "",
-      "registered_at": "2026-09-02T21:16:59.325199",
+      "registered_at": "2026-09-03T13:07:49.133472",
       "cases": [
         {
           "case_id": "TC-TASK-TEST-TAS-SMOKE",
@@ -321,7 +321,7 @@
       "task_title": "Sprint Board Browser Navigation",
       "description": "Workspace dropdown and kanban",
       "project_name": "",
-      "registered_at": "2026-09-02T21:16:59.344664",
+      "registered_at": "2026-09-03T13:07:49.160218",
       "cases": [
         {
           "case_id": "TC-TASK-TEST-TAS-SMOKE",

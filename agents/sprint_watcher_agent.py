@@ -526,7 +526,7 @@ class SprintWatcherAgent:
         - Tests PASS → STATE_DONE (completed)
         - Tests FAIL after auto-retry loop → failed UI + To Do on Plane + auto re-pickup next cycle
         """
-        target_pid = project_id or self.project_id
+        target_pid = project_id or self.project_id or ""
         max_attempts = self._max_retry_attempts()
         action = quality_gate_action(success, builder_ran)
         try:
@@ -645,9 +645,10 @@ class SprintWatcherAgent:
         try:
             projects = list_projects(self.workspace_slug)
             if projects:
-                real_pid = projects[0].get("id")
-                console.print(f"[dim]→ project_id resolved from workspace scan: {real_pid[:8]}...[/dim]")
-                return real_pid
+                real_pid = str(projects[0].get("id") or "")
+                if real_pid:
+                    console.print(f"[dim]→ project_id resolved from workspace scan: {real_pid[:8]}...[/dim]")
+                    return real_pid
         except Exception as e:
             console.print(f"[yellow]⚠️ Could not resolve project_id: {e}[/yellow]")
         return None

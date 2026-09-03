@@ -215,7 +215,7 @@ def commit_and_push_for_task(task_title: str, task_id: str = "") -> dict:
             return {"ok": False, "committed": False, "pushed": False, "files": meaningful, "message": "git add failed"}
         summary = f"Sprint task: {task_title}" if task_title else "Sprint agent commit"
         message = generate_commit_message(
-            tasks_completed=[f"{task_title} ({task_id[:8]})"] if task_title else None,
+            tasks_completed=[f"{task_title} ({task_id[:8]})"] if task_title else [],
             files_changed=meaningful,
             custom_summary=summary,
         )
@@ -274,8 +274,8 @@ def stage_all() -> bool:
 
 
 def generate_commit_message(
-    tasks_completed: list[str] = None,
-    files_changed: list[str] = None,
+    tasks_completed: Optional[list[str]] = None,
+    files_changed: Optional[list[str]] = None,
     custom_summary: Optional[str] = None
 ) -> str:
     """Generate a meaningful commit message from today's activity."""
@@ -399,7 +399,7 @@ def get_unpushed_commits(branch: str = "main") -> list[str]:
 
 
 def eod_push(
-    tasks_completed: list[str] = None,
+    tasks_completed: Optional[list[str]] = None,
     custom_summary: Optional[str] = None
 ) -> bool:
     """

@@ -68,7 +68,11 @@ def register_sprint_task_tests(
     """Dynamically generate browser test cases from sprint task and persist to registry."""
     sys.path.insert(0, str(ROOT_DIR / "tests"))
     try:
-        from sprint_task_test_generator import register_sprint_task
+        try:
+            from tests.sprint_task_test_generator import register_sprint_task
+        except ImportError:
+            # pyrefly: ignore [missing-import]
+            from sprint_task_test_generator import register_sprint_task
         cases = register_sprint_task(task_id, task_title, description, project_name)
         console.print(
             f"[bold cyan][SPRINT-TESTS] Registered {len(cases)} dynamic browser test case(s) "

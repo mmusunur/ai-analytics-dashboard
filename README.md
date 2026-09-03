@@ -6,7 +6,7 @@
 
 ---
 
-## ✨ Core Features & Recent Enhancements (Aug 2026)
+## ✨ Core Features & Recent Enhancements (Sep 2026)
 
 - 📊 **Interactive Executive Dashboard** — KPI summary cards, Cases Built bar charts, Scatter plots, Heatmaps, and Warehouse procurement statistics.
 - 🏭 **Warehouse Sales & Invoice Analytics** — Real-time PostgreSQL (`sptn_sales_data`) item & invoice statistics with date, warehouse, batch, and scratch filters; local `warehouse_seed.json` fallback.
@@ -14,6 +14,8 @@
 - 🤖 **6-Stage Gated Sprint Pipeline (Task 37)** — **Pickup → Build → Test → Close → Git → Done** with **no step skipping**. Build failure blocks Test; Test failure returns to Build with failure context; verify-close uses fast test mode.
 - ⚡ **Smart Test Modes** — `full` (all unit + browser) after code changes; `fast` (unit + smoke + sprint cases ~1 min) for verify-close. Test heartbeat (`test_subphase`, elapsed time) in Sprint Board UI.
 - 📦 **Git Repo Sync Gate (Task 38)** — Git Agent commits allowlisted paths (`agents/`, `backend/`, `frontend/src/`, `tasks/`, `tests/`, etc.) on **every** task close (including verify-close). Idle **git sweep** retries uncommitted files. Done only when Plane closed **and** git gate passes.
+- 🧠 **Pyright & ML Type Safety** — `cast(Any, ...)` type overload resolution for `sklearn.preprocessing.LabelEncoder` to `pandas.Series`, scalar float summary casting in `data_service.py`, and null-safe Random Forest feature importance calculations in `ml_service.py`.
+- 📝 **Automated Daily Memory Persistence (Task 28/40)** — Daily conversation memory logs (`memory/conversations/YYYY-MM-DD.md`) and persistent session fix tracking (`memory/session_fix_history.md`) updated automatically upon code changes.
 - 🔍 **Dual Search (Task 36)** — Global Header (date + DB + warehouse) vs AI Copilot (no date, NL intent); mutually exclusive modes.
 - 🧠 **Builder NLP & Rules** — [`agents/builder_nlp.py`](agents/builder_nlp.py) intent taxonomy (incl. `DATA_ANALYTICS_ML`), [`agents/builder_helpers.py`](agents/builder_helpers.py) component builders, [`agents/builder_rules.py`](agents/builder_rules.py) deterministic fallback.
 - ⚡ **Non-Blocking Background Sprint Watcher** — Polls Plane every **30s** (idle) / **15s** (active task); triggers build/test/close/git in daemon thread via `/api/sprints/tasks`.
@@ -21,7 +23,7 @@
 - 🛡️ **`agent_working` Build-only** — UI polling pauses only during Builder file edits, not during long Test runs.
 - 📊 **Automated Excel Test Matrix** — [`tests/generate_test_excel.py`](tests/generate_test_excel.py) + dynamic sprint cases via [`tests/sprint_task_test_generator.py`](tests/sprint_task_test_generator.py).
 - 📽️ **Architecture Presentation** — [`AI_Analytics_Dashboard_Presentation.pptx`](AI_Analytics_Dashboard_Presentation.pptx) (regenerate: `python scripts/generate_architecture_pptx.py`).
-- 📋 **Modular Task Index** — [`tasks.md`](tasks.md) + [`tasks/`](tasks/) (Tasks 1–40). **Task 39:** update README on architecture changes. **Task 40:** daily memory recall at session start.
+- 📋 **Modular Task Index** — [`tasks.md`](tasks.md) + [`tasks/`](tasks/) (Tasks 1–45). **Task 39:** update README on architecture changes. **Task 40:** daily memory recall at session start.
 - 🛡️ **Auto-Restart Watchdog** — [`scripts/agent_watchdog.py`](scripts/agent_watchdog.py) monitors `:8000`, `:5173`, sprint watcher.
 
 ---

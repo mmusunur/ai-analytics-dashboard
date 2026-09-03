@@ -323,6 +323,7 @@ def update_task_status(project_id: str, task_id: str, state_name: str, workspace
                 console.print(f"[yellow]⚠️ Failed to update task status after retries: {e}[/yellow]")
                 return {}
             time.sleep(1.5 * (attempt + 1))
+    return {}
 
 
 def add_comment(project_id: str, task_id: str, comment_text: str, workspace_slug: Optional[str] = None) -> dict:
@@ -340,6 +341,7 @@ def add_comment(project_id: str, task_id: str, comment_text: str, workspace_slug
             if attempt == 2:
                 return {}
             time.sleep(1.5)
+    return {}
 
 
 def extend_sprint(project_id: str, cycle_id: str, new_end_date: str, workspace_slug: Optional[str] = None) -> dict:

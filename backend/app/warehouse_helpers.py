@@ -43,7 +43,7 @@ def _load_seed_records() -> list:
         _seed_mtime = mtime
     except Exception:
         _seed_cache = []
-    return _seed_cache
+    return _seed_cache or []
 
 
 def filter_warehouse_records(

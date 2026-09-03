@@ -5,7 +5,7 @@ ML Service — handles model training, evaluation, and prediction.
 import time
 import numpy as np
 import pandas as pd
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from collections import Counter
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
@@ -32,8 +32,9 @@ def preprocess(df: pd.DataFrame, target_col: str) -> tuple:
 
     # Encode target if not numeric
     if y.dtype == object:
-        _label_encoder = LabelEncoder()
-        y = pd.Series(_label_encoder.fit_transform(y))
+        le = LabelEncoder()
+        _label_encoder = le
+        y = pd.Series(cast(Any, le.fit_transform(y)), index=y.index)
 
     # Fill missing values
     numeric_cols = X.select_dtypes(include=np.number).columns.tolist()
@@ -42,7 +43,9 @@ def preprocess(df: pd.DataFrame, target_col: str) -> tuple:
     for col in numeric_cols:
         X[col] = X[col].fillna(X[col].mean())
     for col in cat_cols:
-        X[col] = X[col].fillna(X[col].mode()[0])
+        mode_val = X[col].mode()
+        if len(mode_val) > 0:
+            X[col] = X[col].fillna(mode_val.iloc[0])
 
     # One-hot encode categoricals
     X = pd.get_dummies(X, drop_first=True)
@@ -59,7 +62,8 @@ def preprocess(df: pd.DataFrame, target_col: str) -> tuple:
     min_class = min(class_counts.values())
     stratify_y = y if min_class >= 2 else None
 
-    return train_test_split(X, y, test_size=0.2, random_state=42, stratify=stratify_y)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=stratify_y)
+    return (X_train, X_test, y_train, y_test)
 
 
 def _compute_metrics(model_name: str, y_test, y_pred, X: pd.DataFrame) -> dict:
@@ -68,25 +72,29 @@ def _compute_metrics(model_name: str, y_test, y_pred, X: pd.DataFrame) -> dict:
     cm = confusion_matrix(y_test, y_pred).tolist()
     report = classification_report(y_test, y_pred, output_dict=True)
 
-    result = {
+    zd = cast(Any, 0)
+    result: dict[str, Any] = {
         "model_name": model_name,
         "accuracy": round(float(accuracy_score(y_test, y_pred)), 4),
-        "precision": round(float(precision_score(y_test, y_pred, average=avg, zero_division=0)), 4),
-        "recall": round(float(recall_score(y_test, y_pred, average=avg, zero_division=0)), 4),
-        "f1_score": round(float(f1_score(y_test, y_pred, average=avg, zero_division=0)), 4),
+        "precision": round(float(precision_score(y_test, y_pred, average=avg, zero_division=zd)), 4),
+        "recall": round(float(recall_score(y_test, y_pred, average=avg, zero_division=zd)), 4),
+        "f1_score": round(float(f1_score(y_test, y_pred, average=avg, zero_division=zd)), 4),
         "confusion_matrix": cm,
         "classification_report": report,
         "feature_importance": None
     }
 
     # Feature importance for Random Forest
-    if model_name == "Random Forest" and hasattr(_models.get("random_forest"), "feature_importances_"):
-        model = _models["random_forest"]
-        fi = dict(zip(X.columns.tolist(), model.feature_importances_.tolist()))
+    rf_model = _models.get("random_forest")
+    if model_name == "Random Forest" and rf_model is not None and hasattr(rf_model, "feature_importances_"):
+        importances = getattr(rf_model, "feature_importances_", [])
+        fi = {
+            str(col): round(float(imp), 4)
+            for col, imp in zip(X.columns.tolist(), importances)
+        }
         # Top 15 features sorted by importance
-        result["feature_importance"] = dict(
-            sorted(fi.items(), key=lambda x: x[1], reverse=True)[:15]
-        )
+        sorted_items = sorted(fi.items(), key=lambda item: item[1], reverse=True)[:15]
+        result["feature_importance"] = {k: v for k, v in sorted_items}
 
     return result
 
