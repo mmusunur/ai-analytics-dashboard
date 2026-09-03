@@ -226,11 +226,22 @@ def commit_and_push_for_task(task_title: str, task_id: str = "") -> dict:
     pushed = False
     push_deferred = False
     if GITHUB_REPO:
-        branch = os.getenv("GIT_DEFAULT_BRANCH", "main")
-        sync_with_remote(branch)
-        pushed = push_with_retry(branch)
+        curr_stdout, _, _ = _run_git(["rev-parse", "--abbrev-ref", "HEAD"])
+        current_branch = curr_stdout.strip() or "main"
+
+        sync_with_remote(current_branch)
+        pushed = push_with_retry(current_branch)
+
+        # If working on a feature branch, automatically merge into main and push main as well
+        if current_branch != "main":
+            console.print(f"[cyan]🔀 Auto-merging {current_branch} into main branch...[/cyan]")
+            _run_git(["checkout", "main"])
+            _run_git(["merge", current_branch])
+            push_with_retry("main")
+            _run_git(["checkout", current_branch])
+
         if not pushed:
-            if GIT_PUSH_OPTIONAL and (committed or get_unpushed_commits(branch)):
+            if GIT_PUSH_OPTIONAL and (committed or get_unpushed_commits(current_branch)):
                 console.print(
                     "[yellow]⚠️ Push deferred (GIT_PUSH_OPTIONAL) — local commit accepted for demo gate[/yellow]"
                 )

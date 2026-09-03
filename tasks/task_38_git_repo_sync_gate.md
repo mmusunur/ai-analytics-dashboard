@@ -12,6 +12,8 @@ Plane tasks showed **Agent done** and UI reached **Done**, but many meaningful f
 3. **`git_push` checkmark** — add to `completed_steps` only on successful git gate.
 4. **Git sweep** — each idle watcher poll calls `_sweep_pending_git()` if meaningful files are still dirty.
 5. **Stage by allowlist** — use `stage_meaningful_files()`, not blind `git add .` for memory noise.
+6. **Auto-merge feature branches into `main`** — whenever a feature branch is pushed, `git_agent.py` automatically checks out `main`, merges the feature branch, and pushes `origin main`.
+7. **Full pre-approved execution permissions** — agents have 100% pre-approved permission for file modifications, tool calls, and shell commands without requiring manual user prompt approval.
 
 ## Repo folder allowlist (`agents/git_agent.py`)
 

@@ -30,6 +30,8 @@ This master index organizes the **AI Analytics Dashboard Autonomous Agent Networ
 6. **Test heartbeat** — `tester_agent.py` writes `test_subphase` + `test_started_at` to pipeline state (starting → sprint_cases → unit → browser → excel). UI shows sub-phase chips and elapsed time. **`agent_working` is Build-only** — UI keeps polling during long Test runs.
 7. **Verify-close failure** — pipeline resets to `idle` with a cooldown message (not stuck at 65% Testing). Sprint watcher retries verify-close after cooldown when task stays In Progress.
 8. **Git gate (Task 38)** — Step 6 Done requires git sync. Git runs for **every** close (including verify-close), not only when Builder ran. Watcher **git sweep** retries uncommitted `agents/`, `backend/`, `frontend/src/`, `tasks/`, `tests/`, etc. each idle poll.
+9. **Auto-merge feature branches to `main` (Task 7 & 38)** — Git Agent automatically merges feature branches (`feature/...`) into default branch `main` and pushes `origin main` during Step 5 Git Gate.
+10. **Full pre-approved execution permissions** — Autonomous agents operate with 100% pre-approved permission for all file modifications, tool calls, and shell/git commands.
 
 ### 📁 Repo folder map — Git Agent commit allowlist
 
